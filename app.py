@@ -142,7 +142,7 @@ async def submit(req:Request,fid:str):
             if isinstance(value,UploadFile) and value.filename:
                 payload=await value.read(10*1024*1024+1)
                 if len(payload)>10*1024*1024: raise HTTPException(413,"ファイルは10MB以内")
-                if not (payload.startswith(b"%PDF-") or payload.startswith(b"PK\\x03\\x04") or payload.startswith(b"\\xff\\xd8\\xff") or payload.startswith(b"\\x89PNG")): raise HTTPException(400,"非対応のファイル形式")
+                if not (payload.startswith(b"%PDF-") or payload.startswith(b"PK\x03\x04") or payload.startswith(b"\xff\xd8\xff") or payload.startswith(b"\x89PNG")): raise HTTPException(400,"非対応のファイル形式")
                 uploads.append((key,value.filename,payload))
             elif field.get("required"): raise HTTPException(400,key+" は必須")
         else:
@@ -150,7 +150,7 @@ async def submit(req:Request,fid:str):
             if field.get("required") and not v: raise HTTPException(400,key+" は必須")
             if typ=="select" and v and v not in field.get("options",[]): raise HTTPException(400,"不正な選択肢")
             if typ=="number" and v and not re.fullmatch(r"[0-9]+",v): raise HTTPException(400,"数字を入力")
-            if typ=="email" and v and not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",v): raise HTTPException(400,"メール形式が不正")
+            if typ=="email" and v and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",v): raise HTTPException(400,"メール形式が不正")
             answers[key]=v[:20000]
     sid=str(uuid.uuid4()); paths=[]
     try:
