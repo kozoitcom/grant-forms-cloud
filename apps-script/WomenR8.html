@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<base target="_top">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f5f8;color:#172a39;font:16px/1.6 system-ui,sans-serif}
+main{max-width:820px;margin:auto;padding:34px 18px 56px}header{border-top:5px solid #136960;padding:22px 24px;background:#fff;border-radius:12px;margin-bottom:18px}
+h1{font-size:clamp(22px,4vw,32px);line-height:1.3;margin:0 0 12px}h2{font-size:20px;margin:0 0 12px}
+section{background:#fff;border:1px solid #dce5e8;border-radius:12px;padding:22px 24px;margin:16px 0}p{margin:0 0 10px;color:#455b65}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.wide{grid-column:1/-1}
+label{display:block;font-weight:650;margin-bottom:4px}input,textarea,select{width:100%;font:inherit;padding:9px;border:1px solid #91a5ab;border-radius:7px;background:#fff;color:inherit}textarea{resize:vertical}
+.upload{padding:14px 0;border-top:1px solid #e2e9eb}.upload p{font-size:14px}.req{color:#9d2925;font-size:13px}.trap{position:absolute;left:-10000px}
+button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24px;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}#status{margin-top:12px;overflow-wrap:anywhere}
+@media(max-width:580px){.grid{grid-template-columns:1fr}section,header{padding:18px}}
+</style>
+</head>
+<body><main>
+<header>
+<h1>令和8年度 女性活躍情報公開促進奨励金</h1>
+<p>支給申請の書類受付フォームです。正式申請はJグランツで行います。</p>
+</header>
+<form id="form">
+<section><h2>事業者・担当者情報</h2>
+<div class="grid">
+<div><label for="entity">事業者区分 <span class="req">必須</span></label><select id="entity" name="entity" required><option value="">選択してください</option><option value="company">法人</option><option value="sole">個人事業主</option></select></div>
+<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" required></div>
+<div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" maxlength="250" required></div>
+<div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" maxlength="120" required></div>
+<div><label for="person">担当者名 <span class="req">必須</span></label><input id="person" name="person" autocomplete="name" maxlength="80" required></div>
+<div><label for="email">メールアドレス <span class="req">必須</span></label><input id="email" name="email" type="email" autocomplete="email" maxlength="180" required></div>
+<div><label for="phone">電話番号</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></div>
+<div class="wide" data-condition="company" hidden><label for="location">登記上の本店が都外、または本社機能を持つ事業所と所在地が異なりますか？ <span class="req">必須</span></label><select id="location" name="location" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
+<div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
+</div></section>
+<section><h2>提出書類</h2>
+<p>各項目につきPDFを1ファイル添付してください。複数ページは1ファイルにまとめ、添付の合計を20 MB以内にしてください。</p>
+<? documents.forEach(function(document) { ?>
+<div class="upload" data-condition="<?= document[2] ?>" hidden>
+<label for="<?= document[0] ?>"><?= document[1] ?> <span class="req">必須</span></label>
+<p id="<?= document[0] ?>-help"><?= document[3] ?></p>
+<input type="file" id="<?= document[0] ?>" name="<?= document[0] ?>" accept=".pdf,application/pdf" aria-describedby="<?= document[0] ?>-help" disabled>
+</div>
+<? }); ?>
+</section>
+<section><label for="note">備考</label><textarea id="note" name="note" rows="3" maxlength="1000"></textarea></section>
+<div class="trap" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<button type="submit">書類を送信</button>
+<div id="status" role="status"></div>
+</form></main>
+<script>
+const form = document.getElementById('form');
+const button = form.querySelector('button');
+const status = document.getElementById('status');
+function updateDocuments() {
+  const entity = form.elements.entity.value;
+  const groups = new Set(entity ? ['all', entity] : []);
+  if (entity === 'company' && form.elements.location.value === 'yes') groups.add('location');
+  if (entity === 'sole' && form.elements.otherCity.value === 'yes') groups.add('otherCity');
+  form.querySelectorAll('[data-condition]').forEach(row => {
+    const shown = groups.has(row.dataset.condition);
+    row.hidden = !shown;
+    const input = row.querySelector('input, select');
+    input.disabled = !shown;
+    input.required = shown;
+  });
+}
+form.addEventListener('change', updateDocuments);
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  const files = [...form.querySelectorAll('input[type=file]:enabled')].flatMap(input => [...input.files]);
+  if (files.some(file => !/\.pdf$/i.test(file.name)) || files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) {
+    status.textContent = 'PDFのみ、合計20 MB以内で添付してください。';
+    return;
+  }
+  button.disabled = true;
+  status.textContent = '書類を送信しています…';
+  google.script.run.withSuccessHandler(result => {
+    status.textContent = '受付が完了しました。受付ID ' + result.receipt;
+    form.reset();
+    updateDocuments();
+    button.disabled = false;
+  }).withFailureHandler(error => {
+    status.textContent = error.message || '送信できませんでした。';
+    button.disabled = false;
+  }).submitWomenR8(form);
+});
+updateDocuments();
+</script></body></html>

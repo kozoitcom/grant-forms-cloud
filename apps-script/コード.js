@@ -5,7 +5,14 @@
 const GRANT_FOLDER_ID = '1XJovIo8J46rq_VQl-u_pVdjzQ2cAjsm_';
 const HEADER = ['受付日時','受付ID','法人名','担当者名','メールアドレス','電話番号','申請する奨励金','備考'];
 
-function doGet() {
+function doGet(event) {
+  if (event && event.parameter && event.parameter.grant === 'women-r8') {
+    const page = HtmlService.createTemplateFromFile('WomenR8');
+    page.documents = WOMEN_R8_DOCUMENTS;
+    return page.evaluate()
+      .setTitle('令和8年度 女性活躍情報公開促進奨励金 | 書類受付')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('助成金申請 事前受付フォーム')
     .addMetaTag('viewport','width=device-width, initial-scale=1');
@@ -58,4 +65,184 @@ function getResponseSheet_() {
 function setupStorage() {
   const sheet = getResponseSheet_();
   Logger.log('保存先: ' + sheet.getParent().getUrl());
+}
+
+const WOMEN_R8_DOCUMENTS = [
+  [
+    "application",
+    "支給申請書（様式第1号）",
+    "all",
+    "p.12"
+  ],
+  [
+    "offices",
+    "事業所一覧（様式第1号別紙）",
+    "all",
+    "p.12 · 本社・都外事業所も記載"
+  ],
+  [
+    "pledge",
+    "誓約書（様式第2号）",
+    "all",
+    "p.12 · 代表者の自署入り"
+  ],
+  [
+    "insurance",
+    "雇用保険被保険者資格取得等確認通知書（事業主通知用）",
+    "all",
+    "p.12 · 都内で常時雇用する労働者1名分"
+  ],
+  [
+    "rules",
+    "就業規則（本則）",
+    "all",
+    "p.12 · 直近の届出分。受付印が確認できる箇所を含める"
+  ],
+  [
+    "profile",
+    "会社案内または会社概要",
+    "all",
+    "p.12 · 所在地・代表者・事業内容が確認できるもの"
+  ],
+  [
+    "registry",
+    "履歴事項全部証明書",
+    "company",
+    "p.12 · 発行から3か月以内"
+  ],
+  [
+    "opening",
+    "個人事業の開業・廃業等届出書",
+    "sole",
+    "p.12"
+  ],
+  [
+    "residence",
+    "住民票記載事項証明書",
+    "sole",
+    "p.12 · 発行から3か月以内"
+  ],
+  [
+    "locationProof",
+    "水道光熱費の領収書または賃貸借契約書",
+    "location",
+    "pp.12–13 · 事業所の所在地が確認できるもの"
+  ],
+  [
+    "corpCityTax",
+    "法人都民税の納税証明書",
+    "company",
+    "p.13 · 納期確定の直近分"
+  ],
+  [
+    "corpBusinessTax",
+    "法人事業税の納税証明書",
+    "company",
+    "p.13 · 納期確定の直近分"
+  ],
+  [
+    "soleCityTax",
+    "個人都民税の納税証明書",
+    "sole",
+    "p.13 · 納期確定の直近分"
+  ],
+  [
+    "soleOtherCityTax",
+    "もう一方の所在地の個人都民税納税証明書",
+    "otherCity",
+    "p.13 · 居住地と事業所地が異なる場合"
+  ],
+  [
+    "soleBusinessTax",
+    "個人事業税の納税証明書",
+    "sole",
+    "p.13 · 納期確定の直近分"
+  ],
+  [
+    "chart",
+    "組織図",
+    "all",
+    "p.13 · 役職・雇用管理区分が分かるもの"
+  ],
+  [
+    "gender",
+    "男女別一覧",
+    "all",
+    "p.13 · 対象区分のいずれかで女性割合が4割未満と確認できるもの"
+  ]
+];
+const WOMEN_R8_LIMIT = 20 * 1024 * 1024;
+
+function submitWomenR8(form) {
+  if (!form || form.website) throw new Error('送信できませんでした。');
+  const fields = [['company',120],['address',250],['representative',120],
+    ['person',80],['email',180],['phone',40],['note',1000]];
+  const values = fields.map(([key, max]) => String(form[key] || '').trim().slice(0, max));
+  const [company, address, representative, person, email] = values;
+  const {entity, location, otherCity} = form;
+  const corporate = entity === 'company';
+  if ((!corporate && entity !== 'sole') || !company || !address || !representative || !person
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      || !['yes','no'].includes(corporate ? location : otherCity)) {
+    throw new Error('必須項目とメールアドレスを確認してください。');
+  }
+  const applicable = new Set(['all', entity]);
+  if (corporate && location === 'yes') applicable.add('location');
+  if (!corporate && otherCity === 'yes') applicable.add('otherCity');
+  let total = 0;
+  const uploads = WOMEN_R8_DOCUMENTS.filter(([, , group]) => applicable.has(group))
+    .map(([key, label]) => {
+      const blob = form[key];
+      if (!blob || typeof blob.getBytes !== 'function') throw new Error(label + 'を添付してください。');
+      const bytes = blob.getBytes();
+      total += bytes.length;
+      if (total > WOMEN_R8_LIMIT) throw new Error('添付は合計20 MB以内にしてください。');
+      if (bytes.slice(0, 5).join(',') !== '37,80,68,70,45') {
+        throw new Error(label + 'はPDFで添付してください。');
+      }
+      return [key, blob];
+    });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let folder;
+  let recorded = false;
+  try {
+    const {root, sheet} = getWomenR8Storage_();
+    const receipt = Utilities.getUuid();
+    folder = root.createFolder(receipt);
+    uploads.forEach(([key, blob]) => folder.createFile(blob.setName(key + '.pdf')));
+    const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
+    sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
+      ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
+      uploads.length, folder.getUrl()]);
+    recorded = true;
+    SpreadsheetApp.flush();
+    return {receipt};
+  } catch (error) {
+    if (folder && !recorded) {
+      try { folder.setTrashed(true); } catch (_) {}
+    }
+    throw new Error('書類を保存できませんでした。受付担当者にご連絡ください。');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getWomenR8Storage_() {
+  const props = PropertiesService.getScriptProperties();
+  const rootId = props.getProperty('WOMEN_R8_FOLDER_ID');
+  const sheetId = props.getProperty('WOMEN_R8_SHEET_ID');
+  if (rootId && sheetId) {
+    return {root: DriveApp.getFolderById(rootId), sheet: SpreadsheetApp.openById(sheetId).getSheets()[0]};
+  }
+  const root = DriveApp.createFolder('Grant Forms Cloud - 女性活躍情報公開促進奨励金（令和8年度）');
+  const book = SpreadsheetApp.create('女性活躍情報公開促進奨励金（令和8年度）- 書類受付一覧');
+  DriveApp.getFileById(book.getId()).moveTo(root);
+  const sheet = book.getSheets()[0];
+  sheet.appendRow(['受付日時','受付ID','事業者区分','企業名・屋号','所在地','代表者役職・氏名',
+    '担当者名','メール','電話','備考','本店所在地条件','居住地と事業所地が異なる','添付数','書類フォルダ']);
+  sheet.setFrozenRows(1);
+  props.setProperties({WOMEN_R8_FOLDER_ID: root.getId(), WOMEN_R8_SHEET_ID: book.getId()});
+  return {root, sheet};
 }

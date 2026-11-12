@@ -46,7 +46,7 @@ jobs:
             echo "::error::clasp could not determine the local upload files."
             exit 1
           fi
-          for file in appsscript.json Index.html; do
+          for file in appsscript.json Index.html WomenR8.html; do
             if ! grep -Fq "$file" "$verification_dir/status"; then
               echo "::error::A required Apps Script file is missing from clasp status."
               exit 1
@@ -62,7 +62,7 @@ jobs:
             echo "::error::Could not read the synced Apps Script project."
             exit 1
           fi
-          for file in appsscript.json Index.html コード.js; do
+          for file in appsscript.json Index.html WomenR8.html コード.js; do
             if [[ "$file" == コード.js ]]; then
               remote_file="$verification_dir/remote/コード.js"
               [[ -f "$remote_file" ]] || remote_file="$verification_dir/remote/コード.gs"
