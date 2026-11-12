@@ -142,7 +142,7 @@ function publicSubmit(id,answers,files) {
       const driveFile=folder.createFile(blob);
       attachments.push({fieldId:file.fieldId,name:name,fileId:driveFile.getId()});
     });
-    const company=String(clean.company_name||clean.company||'');
+    const company=String(clean.company_name||clean.company||'').replace(/^[=+@-]/, '\\'const company=String(clean.company_name||clean.company||'');');
     answerTab_().appendRow([sid,id,company,JSON.stringify(clean),JSON.stringify(attachments),new Date().toISOString()]);
     return sid;
   } finally {lock.releaseLock();}
@@ -156,8 +156,7 @@ function adminSubmission(token,id) {
 }
 function adminGenerate(token,pdfBase64,name) {
   requireAdmin_(token);
-  const api=settings_().getProperty('OPENAI_API_KEY');
-  if(!api)throw new Error('OPENAI_API_KEY が設定されていません');
+  // Placeholder only; API key is not used until PDF extraction is implemented.
   if(!/\.pdf$/i.test(name))throw new Error('PDFのみ対応です');
   const bytes=Utilities.base64Decode(pdfBase64);
   if(bytes.length>5*1024*1024)throw new Error('PDFは5MB以内です');
