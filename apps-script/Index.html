@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><base target="_top"><style>
+body{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;background:#f5f7fb;color:#192638;margin:0;padding:24px}
+main{max-width:660px;margin:auto;background:#fff;padding:28px;border-radius:14px;box-shadow:0 6px 24px #18253a12}
+h1{font-size:24px;margin:0 0 10px}p{line-height:1.6;color:#526173}
+label{display:block;font-weight:600;margin:18px 0 6px}input,textarea,select{box-sizing:border-box;width:100%;font:inherit;padding:11px;border:1px solid #b7c2d1;border-radius:8px}
+button{background:#215ec7;color:white;border:0;border-radius:8px;padding:12px 20px;font-weight:700;margin-top:22px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}.required{color:#b3261e}.status{margin-top:18px;white-space:pre-wrap}.hidden{position:absolute;left:-10000px}
+</style></head><body><main><h1>助成金申請 事前受付フォーム</h1>
+<p>会社情報とご希望の助成金をお知らせください。現段階では事前受付のみです。正式な申請は完了しません。</p>
+<form id="form">
+<label>法人名 <span class="required">*</span></label><input name="company" maxlength="120" required>
+<label>担当者名 <span class="required">*</span></label><input name="person" maxlength="80" required>
+<label>メールアドレス <span class="required">*</span></label><input name="email" type="email" maxlength="180" required>
+<label>電話番号</label><input name="phone" maxlength="40">
+<label>申請する奨励金 <span class="required">*</span></label>
+<select name="grant" required><option value="">選択してください</option><option>令和8年度 ワーケーション勤務導入奨励金</option><option>その他（備考に記入）</option></select>
+<label>備考</label><textarea name="note" rows="4" maxlength="1000"></textarea>
+<div class="hidden" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<button id="submit" type="submit">内容を送信</button><div id="status" class="status" role="status"></div>
+</form></main><script>
+document.getElementById('form').addEventListener('submit',function(e){
+e.preventDefault();const f=e.currentTarget,b=document.getElementById('submit'),s=document.getElementById('status');
+const data=Object.fromEntries(new FormData(f).entries());b.disabled=true;s.textContent='送信中です…';
+google.script.run.withSuccessHandler(function(r){s.textContent='受付が完了しました。受付ID: '+r.receipt;f.reset();b.disabled=false;})
+.withFailureHandler(function(err){s.textContent='送信できませんでした: '+err.message;b.disabled=false;})
+.submitApplication(data);
+});
+</script></body></html>
