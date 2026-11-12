@@ -37,4 +37,48 @@ jobs:
           chmod 600 "$HOME/.clasprc.json"
       - name: Push Apps Script files
         working-directory: apps-script
-        run: clasp push --force
+        shell: bash
+        run: |
+          set -euo pipefail
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$verification_dir"' EXIT
+          if ! clasp status > "$verification_dir/status" 2>&1; then
+            echo "::error::clasp could not determine the local upload files."
+            exit 1
+          fi
+          for file in appsscript.json Index.html; do
+            if ! grep -Fq "$file" "$verification_dir/status"; then
+              echo "::error::A required Apps Script file is missing from clasp status."
+              exit 1
+            fi
+          done
+          if ! clasp push --force > "$verification_dir/push" 2>&1; then
+            echo "::error::Apps Script push failed."
+            exit 1
+          fi
+          mkdir "$verification_dir/remote"
+          cp .clasp.json "$verification_dir/remote/"
+          if ! (cd "$verification_dir/remote" && clasp pull) > "$verification_dir/pull" 2>&1; then
+            echo "::error::Could not read the synced Apps Script project."
+            exit 1
+          fi
+          for file in appsscript.json Index.html コード.js; do
+            if [[ "$file" == コード.js ]]; then
+              remote_file="$verification_dir/remote/コード.js"
+              [[ -f "$remote_file" ]] || remote_file="$verification_dir/remote/コード.gs"
+            else
+              remote_file="$verification_dir/remote/$file"
+            fi
+            if [[ ! -f "$remote_file" ]]; then
+              echo "::error::A required file is missing from the Apps Script project after push."
+              exit 1
+            fi
+            if [[ "$file" == appsscript.json ]]; then
+              continue
+            fi
+            if ! diff -q --strip-trailing-cr "$file" "$remote_file" > /dev/null; then
+              echo "::error::The Apps Script file contents differ from GitHub after push."
+              exit 1
+            fi
+          done
+          echo "Verified Apps Script files and application source after push."
