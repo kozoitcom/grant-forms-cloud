@@ -414,3 +414,49 @@ function saveGrantDraft(form) {
     lock.releaseLock();
   }
 }
+
+const COMPANY_NUMBER_PREFIX = 'COMPANY_NUMBERS_';
+
+function listCompanyNumbers() {
+  requireGrantAdmin_();
+  const data = PropertiesService.getScriptProperties().getProperties();
+  return Object.entries(data).filter(([key]) => key.startsWith(COMPANY_NUMBER_PREFIX))
+    .map(([, value]) => JSON.parse(value)).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+}
+
+function saveCompanyNumbers(input) {
+  requireGrantAdmin_();
+  const name = String(input.name || '').trim();
+  const id = String(input.id || '');
+  if (!name || name.length > 120 || (id && !/^[a-f0-9-]{36}$/.test(id)) ||
+      !Array.isArray(input.entries) || input.entries.length > 20) {
+    throw new Error('会社名を入力し、項目は20件以内にしてください。');
+  }
+  const labels = new Set();
+  const entries = input.entries.map(([rawLabel, rawValue]) => {
+    const label = String(rawLabel || '').trim();
+    const value = String(rawValue || '').trim();
+    if (!label || label.length > 80 || value.length > 120 || labels.has(label)) {
+      throw new Error('項目名と入力値の長さ、項目名の重複を確認してください。');
+    }
+    labels.add(label);
+    return [label, value];
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const records = listCompanyNumbers();
+    if (id && !records.some(record => record.id === id)) throw new Error('会社の登録が見つかりません。');
+    if (records.some(record => record.id !== id && record.name === name)) {
+      throw new Error('同名の会社は登録済みです。会社一覧から選択してください。');
+    }
+    const recordId = id || Utilities.getUuid();
+    const json = JSON.stringify({id: recordId, name, entries});
+    if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
+    props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
+    return recordId;
+  } finally {
+    lock.releaseLock();
+  }
+}

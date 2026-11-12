@@ -15,6 +15,16 @@
 </form>
 <h3>保存済みの下書き</h3><ul id="drafts"></ul>
 </section>
+<section><h2>会社別の管理者入力項目</h2>
+<p>申請先の入力欄と同じ名前で登録できます。各番号は「コピー」で申請画面へ貼り付けられます。</p>
+<label for="company-records">登録済みの会社</label><select id="company-records"><option value="">新規登録</option></select>
+<form id="company-data">
+<label for="record-name">会社名</label><input id="record-name" maxlength="120" required>
+<div id="number-rows"></div>
+<button id="add-number" type="button">項目を追加</button>
+<button type="submit">会社情報を保存</button>
+<p id="number-status" role="status"></p>
+</form></section>
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
@@ -39,6 +49,73 @@ const notice = document.getElementById('notice');
 const rows = document.getElementById('rows');
 const empty = document.getElementById('empty');
 let token;
+const companyData = document.getElementById('company-data');
+const companyRecords = document.getElementById('company-records');
+const recordName = document.getElementById('record-name');
+const numberRows = document.getElementById('number-rows');
+const numberStatus = document.getElementById('number-status');
+let numberRecords = [];
+function addNumberRow(label = '', value = '') {
+  const row = document.createElement('fieldset');
+  row.innerHTML = '<label>項目名<input data-label maxlength="80"></label>' +
+    '<label>番号・入力値<input data-value type="text" maxlength="120" autocomplete="off" spellcheck="false"></label>' +
+    '<button type="button" data-copy>コピー</button> <button type="button" data-remove>項目を外す</button>';
+  const valueInput = row.querySelector('[data-value]');
+  row.querySelector('[data-label]').value = label;
+  valueInput.value = value;
+  row.querySelector('[data-copy]').onclick = async () => {
+    if (!valueInput.value) { numberStatus.textContent = 'コピーする値を入力してください。'; return; }
+    try {
+      await navigator.clipboard.writeText(valueInput.value);
+      numberStatus.textContent = 'コピーしました。';
+    } catch (_) {
+      valueInput.focus();
+      valueInput.select();
+      const copied = document.execCommand('copy');
+      numberStatus.textContent = copied ? 'コピーしました。' : '選択した値を Ctrl+C でコピーしてください。';
+    }
+  };
+  row.querySelector('[data-remove]').onclick = () => row.remove();
+  numberRows.append(row);
+}
+function showNumberRecord() {
+  const record = numberRecords.find(item => item.id === companyRecords.value);
+  recordName.value = record ? record.name : '';
+  numberRows.replaceChildren();
+  const rows = record ? record.entries : [['労働保険番号',''],['雇用保険適用事業所番号','']];
+  rows.forEach(([label,value]) => addNumberRow(label,value));
+}
+function refreshNumbers(selected = '') {
+  google.script.run.withSuccessHandler(records => {
+    numberRecords = records;
+    companyRecords.replaceChildren(new Option('新規登録', ''));
+    records.forEach(record => companyRecords.add(new Option(record.name, record.id)));
+    companyRecords.value = selected;
+    showNumberRecord();
+  }).withFailureHandler(error => { numberStatus.textContent = error.message; }).listCompanyNumbers();
+}
+companyRecords.addEventListener('change', showNumberRecord);
+document.getElementById('add-number').onclick = () => addNumberRow();
+companyData.addEventListener('submit', event => {
+  event.preventDefault();
+  const button = companyData.querySelector('button[type=submit]');
+  const entries = [...numberRows.children].map(row => [
+    row.querySelector('[data-label]').value, row.querySelector('[data-value]').value
+  ]).filter(([label,value]) => label.trim() || value.trim());
+  button.disabled = true;
+  companyRecords.disabled = true;
+  google.script.run.withSuccessHandler(id => {
+    button.disabled = false;
+    companyRecords.disabled = false;
+    numberStatus.textContent = '保存しました。';
+    refreshNumbers(id);
+  }).withFailureHandler(error => {
+    button.disabled = false;
+    companyRecords.disabled = false;
+    numberStatus.textContent = error.message;
+  }).saveCompanyNumbers({id:companyRecords.value,name:recordName.value,entries});
+});
+refreshNumbers();
 const draft = document.getElementById('draft');
 const draftStatus = document.getElementById('draft-status');
 const draftList = document.getElementById('drafts');
