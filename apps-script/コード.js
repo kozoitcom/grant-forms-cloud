@@ -22,7 +22,7 @@ function submitApplication(input) {
   const grant = value('grant',150);
   const note = value('note',1000);
   if (!company || !person || !email || !grant) throw new Error('必須項目を入力してください。');
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('メールアドレスを確認してください。');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('メールアドレスを確認してください。');
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
