@@ -358,3 +358,59 @@ function sendGrantInvitation(token) {
     lock.releaseLock();
   }
 }
+
+const GRANT_DRAFT_FOLDER = 'GRANT_DRAFT_FOLDER_ID';
+
+function listGrantDrafts() {
+  requireGrantAdmin_();
+  const id = PropertiesService.getScriptProperties().getProperty(GRANT_DRAFT_FOLDER);
+  if (!id) return [];
+  const files = DriveApp.getFolderById(id).getFiles();
+  const drafts = [];
+  while (files.hasNext()) {
+    const file = files.next();
+    try {
+      const metadata = JSON.parse(file.getDescription());
+      if (metadata && metadata.title && metadata.year) drafts.push({...metadata, url: file.getUrl()});
+    } catch (_) {
+      // Files without draft metadata do not represent draft forms.
+    }
+  }
+  return drafts.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function saveGrantDraft(form) {
+  requireGrantAdmin_();
+  const title = String(form.title || '').trim();
+  const year = String(form.year || '').trim();
+  const fields = String(form.fields || '').trim().slice(0, 4000);
+  const documents = String(form.documents || '').trim().slice(0, 4000);
+  const blob = form.guidelines;
+  if (!title || title.length > 180 || !year || year.length > 32) {
+    throw new Error('助成金名と年度を確認してください。');
+  }
+  if (!blob || typeof blob.getBytes !== 'function') throw new Error('募集要項PDFを選んでください。');
+  const bytes = blob.getBytes();
+  if (bytes.length > 20 * 1024 * 1024 || bytes.slice(0, 5).join(',') !== '37,80,68,70,45') {
+    throw new Error('募集要項は20 MB以内のPDFを添付してください。');
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let file;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const id = props.getProperty(GRANT_DRAFT_FOLDER);
+    const folder = id ? DriveApp.getFolderById(id) : DriveApp.createFolder('Grant Forms Cloud - 募集要項・フォーム下書き');
+    if (!id) props.setProperty(GRANT_DRAFT_FOLDER, folder.getId());
+    file = folder.createFile(blob.setName(year + ' ' + title + ' 募集要項.pdf'));
+    file.setDescription(JSON.stringify({title, year, fields, documents, createdAt: Date.now()}));
+    return true;
+  } catch (error) {
+    if (file) {
+      try { file.setTrashed(true); } catch (_) {}
+    }
+    throw new Error('下書きを保存できませんでした。');
+  } finally {
+    lock.releaseLock();
+  }
+}

@@ -2,6 +2,19 @@
 *{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
 </style></head><body><main>
 <h1>Grant Forms Cloud 管理画面</h1>
+<section><h2>新しい助成金フォーム</h2>
+<form id="draft">
+<label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
+<label for="draft-year">年度</label><input id="draft-year" name="year" maxlength="32" placeholder="令和8年度" required>
+<label for="draft-pdf">募集要項PDF（20 MBまで）</label>
+<input id="draft-pdf" name="guidelines" type="file" accept=".pdf,application/pdf" required>
+<label for="draft-fields">入力項目案</label><textarea id="draft-fields" name="fields" maxlength="4000" placeholder="企業名、担当者名、対象事業所など"></textarea>
+<label for="draft-documents">提出書類案・必須条件</label><textarea id="draft-documents" name="documents" maxlength="4000" placeholder="登記事項証明書（法人のみ）など"></textarea>
+<button type="submit">募集要項と項目案を下書き保存</button>
+<p id="draft-status" role="status"></p>
+</form>
+<h3>保存済みの下書き</h3><ul id="drafts"></ul>
+</section>
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
@@ -26,6 +39,54 @@ const notice = document.getElementById('notice');
 const rows = document.getElementById('rows');
 const empty = document.getElementById('empty');
 let token;
+const draft = document.getElementById('draft');
+const draftStatus = document.getElementById('draft-status');
+const draftList = document.getElementById('drafts');
+function refreshDrafts() {
+  google.script.run.withSuccessHandler(items => {
+    draftList.replaceChildren();
+    for (const item of items) {
+      const row = document.createElement('li');
+      const detail = document.createElement('details');
+      const title = document.createElement('summary');
+      title.textContent = item.year + ' ' + item.title;
+      detail.append(title);
+      const pdf = document.createElement('a');
+      pdf.href = item.url;
+      pdf.target = '_blank';
+      pdf.rel = 'noopener noreferrer';
+      pdf.textContent = '募集要項PDFを開く';
+      detail.append(pdf);
+      const notes = document.createElement('p');
+      notes.style.whiteSpace = 'pre-wrap';
+      notes.textContent = '入力項目案\n' + (item.fields || '未入力') + '\n\n提出書類案・必須条件\n' + (item.documents || '未入力');
+      detail.append(notes);
+      row.append(detail);
+      draftList.append(row);
+    }
+  }).withFailureHandler(error => { draftStatus.textContent = error.message; }).listGrantDrafts();
+}
+draft.addEventListener('submit', event => {
+  event.preventDefault();
+  const file = draft.elements.guidelines.files[0];
+  if (!file || !/\.pdf$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
+    draftStatus.textContent = '20 MB以内のPDFを選んでください。';
+    return;
+  }
+  const button = draft.querySelector('button');
+  button.disabled = true;
+  draftStatus.textContent = '保存中…';
+  google.script.run.withSuccessHandler(() => {
+    draft.reset();
+    button.disabled = false;
+    draftStatus.textContent = '下書きを保存しました。';
+    refreshDrafts();
+  }).withFailureHandler(error => {
+    button.disabled = false;
+    draftStatus.textContent = error.message;
+  }).saveGrantDraft(draft);
+});
+refreshDrafts();
 function showError(error) { notice.textContent = error.message || '処理できませんでした。'; }
 function refresh() {
   google.script.run.withSuccessHandler(entries => {
