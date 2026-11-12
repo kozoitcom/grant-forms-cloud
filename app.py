@@ -186,3 +186,42 @@ def download(req:Request,aid:str):
     content=download_file(a["object_path"])
     from urllib.parse import quote
     return Response(content,media_type="application/octet-stream",headers={"Content-Disposition":"attachment; filename*=UTF-8''"+quote(a["filename"])})
+
+@app.get("/admin/google/connect")
+def google_connect(req:Request):
+    guard(req)
+    from urllib.parse import urlencode
+    client_id=os.getenv("GOOGLE_CLIENT_ID","")
+    secret=os.getenv("ADMIN_PASSWORD","")
+    if not client_id or not os.getenv("GOOGLE_CLIENT_SECRET"):
+        raise HTTPException(503,"Google OAuth client is not configured")
+    stamp=str(int(__import__("time").time()))
+    sig=hmac.new(secret.encode(),stamp.encode(),hashlib.sha256).hexdigest()
+    redirect=os.getenv("GOOGLE_REDIRECT_URI",str(req.base_url).rstrip("/")+"/admin/google/callback")
+    query=urlencode({"client_id":client_id,"redirect_uri":redirect,"response_type":"code",
+      "scope":"https://www.googleapis.com/auth/drive","access_type":"offline",
+      "prompt":"consent","state":stamp+"."+sig})
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?"+query)
+
+@app.get("/admin/google/callback")
+def google_callback(req:Request,code:str="",state:str=""):
+    import time, requests
+    try:
+        stamp,sig=state.split(".",1)
+        expected=hmac.new(os.environ["ADMIN_PASSWORD"].encode(),stamp.encode(),hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig,expected) or abs(time.time()-int(stamp))>600:
+            raise ValueError("Invalid OAuth state")
+    except Exception: raise HTTPException(400,"Invalid or expired OAuth state")
+    redirect=os.getenv("GOOGLE_REDIRECT_URI",str(req.base_url).rstrip("/")+"/admin/google/callback")
+    response=requests.post("https://oauth2.googleapis.com/token",data={
+        "code":code,"client_id":os.environ["GOOGLE_CLIENT_ID"],
+        "client_secret":os.environ["GOOGLE_CLIENT_SECRET"],
+        "redirect_uri":redirect,"grant_type":"authorization_code"},timeout=25)
+    if not response.ok: raise HTTPException(400,"Google OAuth exchange failed")
+    refresh=response.json().get("refresh_token")
+    if not refresh: raise HTTPException(400,"No refresh token returned. Revoke previous app access and retry.")
+    return page("Google Drive接続準備完了",
+        "<p>以下の値をRenderの環境変数 GOOGLE_REFRESH_TOKEN に設定してください。"
+        "このページを他人に見せたり、GitHubへ貼り付けたりしないでください。</p>"
+        "<textarea rows='5' readonly>"+esc(refresh)+"</textarea>"
+        "<p>設定後、Save, deploy を押してください。</p>")
