@@ -45,7 +45,7 @@ def validate(schema):
 def health(): return {"status":"ok"}
 
 @app.get("/")
-def root(): return RedirectResponse("/admin")
+def root(req:Request): return RedirectResponse("/admin" if admin(req) else "/login")
 
 @app.get("/login")
 def login(): return page("管理者ログイン",'<form method="post"><label>パスワード</label><input type="password" name="password" required><p><button>ログイン</button></p></form>')
@@ -60,7 +60,7 @@ def login_post(password:str=Form(...)):
 
 @app.get("/admin")
 def dashboard(req:Request):
-    guard(req)
+    if not admin(req): return RedirectResponse("/login",303)
     forms=db().table("forms").select("id,title,published").order("created_at",desc=True).execute().data
     submissions=db().table("submissions").select("id,form_id,created_at").order("created_at",desc=True).limit(100).execute().data
     body='<h2>募集要項PDFからフォーム案を生成</h2><form method="post" action="/admin/generate" enctype="multipart/form-data"><input type="file" name="pdf" accept=".pdf" required><p><button>AI解析・下書き作成</button></p></form><h2>フォーム一覧</h2>'
