@@ -2,17 +2,19 @@ import os, io, re, json, uuid, hmac, hashlib, html
 from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from supabase import create_client
+from drive_store import list_rows, create_row, update_row, get_row, upload_file, download_file, collection
 from pypdf import PdfReader
 
 app = FastAPI(title="Grant Forms Cloud")
 BUCKET = "application-documents"
 TYPES = {"text","email","number","date","textarea","select","file"}
 
-def db():
-    if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
-        raise HTTPException(503,"Supabase is not configured")
-    return create_client(os.environ["SUPABASE_URL"],os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+def rows(table):
+    return list_rows(table)
+
+def row(table, rid):
+    return get_row(table,rid)
+
 
 def esc(s):
     return html.escape(str(s or ""),quote=True)
@@ -61,8 +63,8 @@ def login_post(password:str=Form(...)):
 @app.get("/admin")
 def dashboard(req:Request):
     if not admin(req): return RedirectResponse("/login",303)
-    forms=db().table("forms").select("id,title,published").order("created_at",desc=True).execute().data
-    submissions=db().table("submissions").select("id,form_id,created_at").order("created_at",desc=True).limit(100).execute().data
+    forms=sorted(rows("forms"),key=lambda r:r.get("created_at",""),reverse=True)
+    submissions=sorted(rows("submissions"),key=lambda r:r.get("created_at",""),reverse=True)[:100]
     body='<h2>募集要項PDFからフォーム案を生成</h2><form method="post" action="/admin/generate" enctype="multipart/form-data"><input type="file" name="pdf" accept=".pdf" required><p><button>AI解析・下書き作成</button></p></form><h2>フォーム一覧</h2>'
     for f in forms:
         fid=esc(f["id"])
@@ -86,14 +88,14 @@ async def generate(req:Request,pdf:UploadFile=File(...)):
     try:
         response=OpenAI().chat.completions.create(model=os.getenv("OPENAI_MODEL","gpt-4.1-mini"),messages=[{"role":"system","content":instruction},{"role":"user","content":text[:90000]}],response_format={"type":"json_object"})
         schema=validate(json.loads(response.choices[0].message.content))
-        result=db().table("forms").insert({"title":schema.get("title","新規フォーム"),"source_name":pdf.filename,"fields":schema["fields"],"published":False}).execute().data[0]
+        result=create_row("forms",{"title":schema.get("title","新規フォーム"),"source_name":pdf.filename,"fields":schema["fields"],"published":False})
     except Exception: raise HTTPException(502,"AI解析または保存に失敗しました")
     return RedirectResponse("/admin/edit/"+result["id"],303)
 
 @app.get("/admin/edit/{fid}")
 def edit(req:Request,fid:str):
     guard(req)
-    f=db().table("forms").select("*").eq("id",fid).single().execute().data
+    f=row("forms",fid)
     body='<p>AIの生成結果を必ず確認してください。保存すると非公開に戻ります。</p><form method="post"><label>フォーム名</label><input name="title" value="'+esc(f["title"])+'" required><label>項目JSON</label><textarea name="fields" rows="22" required>'+esc(json.dumps(f["fields"],ensure_ascii=False,indent=2))+'</textarea><p><button>下書きを保存</button></p></form>'
     body+='<form method="post" action="/admin/publish/'+esc(fid)+'"><button>'+('非公開にする' if f["published"] else '確認済み・公開する')+'</button></form><p><a href="/admin">管理画面へ戻る</a></p>'
     return page("フォーム確認・編集",body)
@@ -103,19 +105,19 @@ def edit_post(req:Request,title:str=Form(...),fields:str=Form(...),fid:str=""):
     guard(req)
     try: fs=validate({"fields":json.loads(fields)})["fields"]
     except Exception as e: raise HTTPException(400,str(e))
-    db().table("forms").update({"title":title,"fields":fs,"published":False}).eq("id",fid).execute()
+    update_row("forms",row("forms",fid),{"title":title,"fields":fs,"published":False})
     return RedirectResponse("/admin/edit/"+fid,303)
 
 @app.post("/admin/publish/{fid}")
 def publish(req:Request,fid:str):
     guard(req)
-    client=db(); f=client.table("forms").select("published").eq("id",fid).single().execute().data
-    client.table("forms").update({"published":not f["published"]}).eq("id",fid).execute()
+    f=row("forms",fid)
+    update_row("forms",f,{"published":not f["published"]})
     return RedirectResponse("/admin/edit/"+fid,303)
 
 @app.get("/f/{fid}")
 def form(req:Request,fid:str):
-    f=db().table("forms").select("*").eq("id",fid).single().execute().data
+    f=row("forms",fid)
     if not f["published"] and not admin(req): raise HTTPException(404,"フォームは非公開です")
     body='<form method="post" enctype="multipart/form-data">'
     for field in f["fields"]:
@@ -133,7 +135,7 @@ def form(req:Request,fid:str):
 
 @app.post("/f/{fid}")
 async def submit(req:Request,fid:str):
-    client=db(); f=client.table("forms").select("*").eq("id",fid).single().execute().data
+    f=row("forms",fid)
     if not f["published"]: raise HTTPException(403,"受付停止中")
     data=await req.form(); answers={}; uploads=[]
     for field in f["fields"]:
@@ -154,32 +156,33 @@ async def submit(req:Request,fid:str):
             answers[key]=v[:20000]
     sid=str(uuid.uuid4()); paths=[]
     try:
+        folder=collection("uploads")
         for key,filename,payload in uploads:
             extension=Path(filename).suffix.lower()[:8]
-            path=f"{fid}/{sid}/{key}-{uuid.uuid4().hex}{extension}"
-            client.storage.from_(BUCKET).upload(path,payload,{"content-type":"application/octet-stream"})
-            paths.append((key,filename,path))
-        client.table("submissions").insert({"id":sid,"form_id":fid,"answers":answers}).execute()
-        if paths: client.table("attachments").insert([{"submission_id":sid,"field_id":k,"filename":n,"object_path":p} for k,n,p in paths]).execute()
+            file_id=upload_file(sid+"-"+key+"-"+uuid.uuid4().hex+extension,payload,folder)
+            paths.append((key,filename,file_id))
+        create_row("submissions",{"id":sid,"form_id":fid,"answers":answers})
+        for key,filename,file_id in paths:
+            create_row("attachments",{"submission_id":sid,"field_id":key,"filename":filename,"object_path":file_id})
     except Exception:
-        for _,_,path in paths:
-            try: client.storage.from_(BUCKET).remove([path])
-            except Exception: pass
-        raise HTTPException(500,"保存に失敗しました")
+        raise HTTPException(500,"保存に失敗しました。管理者に連絡してください")
     return page("送信完了","<p>回答を受け付けました。受付番号："+esc(sid)+"</p>")
 
 @app.get("/admin/submission/{sid}")
 def detail(req:Request,sid:str):
-    guard(req); client=db()
-    row=client.table("submissions").select("*").eq("id",sid).single().execute().data
-    attachments=client.table("attachments").select("*").eq("submission_id",sid).execute().data
-    body="<h2>回答</h2><pre style='white-space:pre-wrap'>"+esc(json.dumps(row["answers"],ensure_ascii=False,indent=2))+"</pre><h2>添付書類</h2>"
-    for a in attachments: body+='<p><a href="/admin/file/'+esc(a["id"])+'">'+esc(a["filename"])+"</a></p>"
+    guard(req)
+    item=row("submissions",sid)
+    attachments=[a for a in rows("attachments") if a["submission_id"]==sid]
+    body="<h2>回答</h2><pre style='white-space:pre-wrap'>"+esc(json.dumps(item["answers"],ensure_ascii=False,indent=2))+"</pre><h2>添付書類</h2>"
+    for a in attachments:
+        body+='<p><a href="/admin/file/'+esc(a["id"])+'">'+esc(a["filename"])+"</a></p>"
     return page("企業回答詳細",body)
 
 @app.get("/admin/file/{aid}")
 def download(req:Request,aid:str):
     guard(req)
-    client=db(); a=client.table("attachments").select("*").eq("id",aid).single().execute().data
-    result=client.storage.from_(BUCKET).create_signed_url(a["object_path"],60)
-    return RedirectResponse(result.get("signedURL") or result.get("signedUrl"))
+    from fastapi.responses import Response
+    a=row("attachments",aid)
+    content=download_file(a["object_path"])
+    from urllib.parse import quote
+    return Response(content,media_type="application/octet-stream",headers={"Content-Disposition":"attachment; filename*=UTF-8''"+quote(a["filename"])})
