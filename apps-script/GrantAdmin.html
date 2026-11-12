@@ -1,0 +1,88 @@
+<!doctype html><html lang="ja"><head><base target="_top"><style>
+*{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
+</style></head><body><main>
+<h1>Grant Forms Cloud 管理画面</h1>
+<section><h2>会社向けリンクの発行</h2>
+<form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
+<label for="email">案内メールの宛先</label><input id="email" name="email" type="email" maxlength="180" required>
+<button type="submit">専用リンクを発行</button></form>
+<div id="preview" hidden>
+<label for="link">会社専用リンク</label><input id="link" readonly>
+<label for="to">宛先</label><input id="to" readonly>
+<label for="subject">件名</label><input id="subject" readonly>
+<label for="message">本文</label><textarea id="message" readonly></textarea>
+<button id="send" type="button">この内容でメール送信</button></div>
+<p id="notice" role="status"></p></section>
+<section id="history"><h2>案内・提出履歴</h2>
+<table><thead><tr><th>会社</th><th>助成金</th><th>宛先</th><th>送信日時</th><th>提出状況</th></tr></thead><tbody id="rows"></tbody></table>
+<p id="empty" role="status"></p></section>
+</main><script>
+const issue = document.getElementById('issue');
+const issueButton = issue.querySelector('button');
+const preview = document.getElementById('preview');
+const send = document.getElementById('send');
+const notice = document.getElementById('notice');
+const rows = document.getElementById('rows');
+const empty = document.getElementById('empty');
+let token;
+function showError(error) { notice.textContent = error.message || '処理できませんでした。'; }
+function refresh() {
+  google.script.run.withSuccessHandler(entries => {
+    rows.replaceChildren();
+    empty.textContent = entries.length ? '' : '案内履歴はありません。';
+    for (const item of entries) {
+      const row = rows.insertRow();
+      const grantName = document.getElementById('grant').querySelector('option[value="' + item.grant + '"]')?.textContent || item.grant;
+      const sent = item.sentAt ? new Date(item.sentAt).toLocaleString('ja-JP', {timeZone:'Asia/Tokyo'}) :
+        item.sending ? '送信結果を要確認' : '未送信';
+      for (const value of [item.company, grantName, item.email, sent]) row.insertCell().textContent = value;
+      const cell = row.insertCell();
+      if (item.receipt && item.folderUrl) {
+        const link = document.createElement('a');
+        link.href = item.folderUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = '提出済み・書類を開く';
+        cell.append(link);
+      } else cell.textContent = Date.now() > item.expiresAt ? '期限切れ' : '未提出';
+    }
+  }).withFailureHandler(error => { empty.textContent = error.message; }).listGrantInvitations();
+}
+issue.addEventListener('submit', event => {
+  event.preventDefault();
+  issueButton.disabled = true;
+  preview.hidden = true;
+  notice.textContent = '発行中…';
+  google.script.run.withSuccessHandler(result => {
+    token = result.token;
+    for (const [id, value] of Object.entries({link:result.url,to:result.email,subject:result.subject,message:result.body})) {
+      document.getElementById(id).value = value;
+    }
+    preview.hidden = false;
+    send.disabled = false;
+    issueButton.disabled = false;
+    notice.textContent = 'リンクを発行しました。宛先と本文をご確認ください。';
+    refresh();
+  }).withFailureHandler(error => {
+    issueButton.disabled = false;
+    showError(error);
+  }).createGrantInvitation(Object.fromEntries(new FormData(issue)));
+});
+send.addEventListener('click', () => {
+  if (!token) return;
+  send.disabled = true;
+  issueButton.disabled = true;
+  notice.textContent = '送信中…';
+  google.script.run.withSuccessHandler(() => {
+    issueButton.disabled = false;
+    notice.textContent = '案内メールを送信しました。';
+    refresh();
+  }).withFailureHandler(error => {
+    issueButton.disabled = false;
+    showError(error);
+    refresh();
+  }).sendGrantInvitation(token);
+});
+refresh();
+</script></body></html>

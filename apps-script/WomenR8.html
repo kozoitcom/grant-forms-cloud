@@ -19,11 +19,13 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <h1>令和8年度 女性活躍情報公開促進奨励金</h1>
 <p>支給申請の書類受付フォームです。正式申請はJグランツで行います。</p>
 </header>
+<? if (invitation) { ?><p>提出先の案内対象企業 <?= invitation.company ?></p><? } ?>
 <form id="form">
+<input type="hidden" name="inviteToken" value="<?= inviteToken ?>">
 <section><h2>事業者・担当者情報</h2>
 <div class="grid">
 <div><label for="entity">事業者区分 <span class="req">必須</span></label><select id="entity" name="entity" required><option value="">選択してください</option><option value="company">法人</option><option value="sole">個人事業主</option></select></div>
-<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" required></div>
+<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= invitation ? invitation.company : '' ?>" <? if (invitation) { ?>readonly<? } ?> required></div>
 <div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" maxlength="250" required></div>
 <div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" maxlength="120" required></div>
 <div><label for="person">担当者名 <span class="req">必須</span></label><input id="person" name="person" autocomplete="name" maxlength="80" required></div>

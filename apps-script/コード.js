@@ -6,9 +6,19 @@ const GRANT_FOLDER_ID = '1XJovIo8J46rq_VQl-u_pVdjzQ2cAjsm_';
 const HEADER = ['受付日時','受付ID','法人名','担当者名','メールアドレス','電話番号','申請する奨励金','備考'];
 
 function doGet(event) {
+  const params = (event && event.parameter) || {};
+  if (params.page === 'admin') {
+    requireGrantAdmin_();
+    return HtmlService.createHtmlOutputFromFile('GrantAdmin')
+      .setTitle('Grant Forms Cloud 管理画面')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   if (event && event.parameter && event.parameter.grant === 'women-r8') {
     const page = HtmlService.createTemplateFromFile('WomenR8');
     page.documents = WOMEN_R8_DOCUMENTS;
+    page.invitation = params.invite ? readGrantInvitation_(params.invite) : null;
+    if (!page.invitation) requireGrantAdmin_();
+    page.inviteToken = page.invitation ? params.invite : '';
     return page.evaluate()
       .setTitle('令和8年度 女性活躍情報公開促進奨励金 | 書類受付')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -19,6 +29,7 @@ function doGet(event) {
 }
 
 function submitApplication(input) {
+  requireGrantAdmin_();
   if (!input || typeof input !== 'object') throw new Error('入力内容がありません。');
   const value = (key, max) => String(input[key] || '').trim().slice(0,max);
   if (value('website',100)) throw new Error('送信できませんでした。');
@@ -63,6 +74,7 @@ function getResponseSheet_() {
 
 /** Run once from the editor to initialize storage and authorize Drive/Sheets. */
 function setupStorage() {
+  requireGrantAdmin_();
   const sheet = getResponseSheet_();
   Logger.log('保存先: ' + sheet.getParent().getUrl());
 }
@@ -179,6 +191,8 @@ function submitWomenR8(form) {
     ['person',80],['email',180],['phone',40],['note',1000]];
   const values = fields.map(([key, max]) => String(form[key] || '').trim().slice(0, max));
   const [company, address, representative, person, email] = values;
+  const token = String(form.inviteToken || '');
+  if (!token) requireGrantAdmin_();
   const {entity, location, otherCity} = form;
   const corporate = entity === 'company';
   if ((!corporate && entity !== 'sole') || !company || !address || !representative || !person
@@ -208,6 +222,11 @@ function submitWomenR8(form) {
   let folder;
   let recorded = false;
   try {
+    const invitation = token ? readGrantInvitation_(token) : null;
+    if (invitation && invitation.receipt) return {receipt: invitation.receipt};
+    if (invitation && (company !== invitation.company || email.toLowerCase() !== invitation.email.toLowerCase())) {
+      throw new Error('案内メールの会社名と宛先メールアドレスを確認してください。');
+    }
     const {root, sheet} = getWomenR8Storage_();
     const receipt = Utilities.getUuid();
     folder = root.createFolder(receipt);
@@ -218,6 +237,11 @@ function submitWomenR8(form) {
       uploads.length, folder.getUrl()]);
     recorded = true;
     SpreadsheetApp.flush();
+    if (invitation) {
+      invitation.receipt = receipt;
+      invitation.folderUrl = folder.getUrl();
+      writeGrantInvitation_(token, invitation);
+    }
     return {receipt};
   } catch (error) {
     if (folder && !recorded) {
@@ -245,4 +269,92 @@ function getWomenR8Storage_() {
   sheet.setFrozenRows(1);
   props.setProperties({WOMEN_R8_FOLDER_ID: root.getId(), WOMEN_R8_SHEET_ID: book.getId()});
   return {root, sheet};
+}
+
+const GRANT_FORMS = {
+  'women-r8': '令和8年度 女性活躍情報公開促進奨励金'
+};
+const GRANT_INVITE_PREFIX = 'GRANT_INVITE_';
+
+function requireGrantAdmin_() {
+  const active = Session.getActiveUser().getEmail().toLowerCase();
+  const owner = Session.getEffectiveUser().getEmail().toLowerCase();
+  if (!active || active !== owner) throw new Error('管理者アカウントで開いてください。');
+}
+
+function grantInvitationKey_(token) {
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('受付リンクが無効です。');
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token);
+  return GRANT_INVITE_PREFIX + Utilities.base64EncodeWebSafe(digest);
+}
+
+function readGrantInvitation_(token) {
+  const raw = PropertiesService.getScriptProperties().getProperty(grantInvitationKey_(token));
+  const invitation = raw ? JSON.parse(raw) : null;
+  if (!invitation || invitation.grant !== 'women-r8' || Date.now() > invitation.expiresAt) {
+    throw new Error('受付リンクが無効か、期限が切れています。');
+  }
+  return invitation;
+}
+
+function writeGrantInvitation_(token, invitation) {
+  PropertiesService.getScriptProperties().setProperty(grantInvitationKey_(token), JSON.stringify(invitation));
+}
+
+function listGrantInvitations() {
+  requireGrantAdmin_();
+  const properties = PropertiesService.getScriptProperties().getProperties();
+  return Object.entries(properties).filter(([key]) => key.startsWith(GRANT_INVITE_PREFIX))
+    .map(([, value]) => JSON.parse(value)).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function createGrantInvitation(input) {
+  requireGrantAdmin_();
+  const company = String(input.company || '').trim();
+  const email = String(input.email || '').trim();
+  const grant = String(input.grant || '');
+  if (!company || company.length > 120 || /[\r\n]/.test(company) || email.length > 180 ||
+      !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email) ||
+      !Object.prototype.hasOwnProperty.call(GRANT_FORMS, grant)) {
+    throw new Error('会社名・宛先メールアドレス・助成金を確認してください。');
+  }
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+  const createdAt = Date.now();
+  const invitation = {company, email, grant, createdAt, expiresAt: createdAt + 30 * 86400000};
+  writeGrantInvitation_(token, invitation);
+  return {token, ...grantInvitationMessage_(token, invitation)};
+}
+
+function grantInvitationMessage_(token, invitation) {
+  const title = GRANT_FORMS[invitation.grant];
+  const url = ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec') +
+    '?grant=' + encodeURIComponent(invitation.grant) + '&invite=' + encodeURIComponent(token);
+  const deadline = Utilities.formatDate(new Date(invitation.expiresAt), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
+  return {email: invitation.email, url, subject: '【書類提出のご案内】' + title,
+    body: invitation.company + ' ご担当者様\n\n' +
+      title + 'の申請書類を、以下の貴社専用フォームからご提出ください。\n\n' +
+      url + '\n\n受付リンクの有効期限 ' + deadline + '（日本時間）\n' +
+      'フォームには、このメールの宛先と同じメールアドレスを入力してください。\n' +
+      'このリンクは関係者以外に共有しないでください。'};
+}
+
+function sendGrantInvitation(token) {
+  requireGrantAdmin_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const invitation = readGrantInvitation_(token);
+    if (invitation.sentAt) return {sentAt: invitation.sentAt};
+    if (invitation.sending) throw new Error('送信結果を確認してください。二重送信を防ぐため再送を停止しました。');
+    const message = grantInvitationMessage_(token, invitation);
+    invitation.sending = true;
+    writeGrantInvitation_(token, invitation);
+    MailApp.sendEmail(message.email, message.subject, message.body);
+    invitation.sentAt = Date.now();
+    delete invitation.sending;
+    writeGrantInvitation_(token, invitation);
+    return {sentAt: invitation.sentAt};
+  } finally {
+    lock.releaseLock();
+  }
 }
