@@ -20,6 +20,11 @@
 <label for="company-records">登録済みの会社</label><select id="company-records"><option value="">新規登録</option></select>
 <form id="company-data">
 <label for="record-name">会社名</label><input id="record-name" maxlength="120" required>
+<label for="profile-address">事業所所在地</label><input id="profile-address" data-profile="address" maxlength="250">
+<label for="profile-representative">代表者の役職・氏名</label><input id="profile-representative" data-profile="representative" maxlength="120">
+<label for="profile-representativeKana">代表者のふりがな</label><input id="profile-representativeKana" data-profile="representativeKana" maxlength="120">
+<label for="profile-person">担当者名</label><input id="profile-person" data-profile="person" maxlength="80">
+<label for="profile-phone">電話番号</label><input id="profile-phone" data-profile="phone" maxlength="40">
 <div id="number-rows"></div>
 <button id="add-number" type="button">項目を追加</button>
 <button type="submit">会社情報を保存</button>
@@ -27,6 +32,8 @@
 </form></section>
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
+<p id="prefill-preview" role="status"></p>
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
 <label for="email">案内メールの宛先</label><input id="email" name="email" type="email" maxlength="180" required>
 <button type="submit">専用リンクを発行</button></form>
@@ -55,6 +62,20 @@ const recordName = document.getElementById('record-name');
 const numberRows = document.getElementById('number-rows');
 const numberStatus = document.getElementById('number-status');
 let numberRecords = [];
+const issueCompany = document.getElementById('issue-company');
+const issueName = document.getElementById('company');
+function updateIssueCompany() {
+  const record = numberRecords.find(item => item.id === issueCompany.value);
+  issueName.readOnly = Boolean(record);
+  if (record) issueName.value = record.name;
+  const labels = {"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]};
+  const selected = record ? Object.keys(labels).filter(key => record.profile?.[key]).map(key => labels[key][0]) : [];
+  document.getElementById('prefill-preview').textContent = record ? '事前入力：会社名' + (selected.length ? '、' + selected.join('、') : '') : '';
+}
+issueCompany.addEventListener('change', () => {
+  issueName.value = '';
+  updateIssueCompany();
+});
 function addNumberRow(label = '', value = '') {
   const row = document.createElement('fieldset');
   row.innerHTML = '<label>項目名<input data-label maxlength="80"></label>' +
@@ -81,6 +102,9 @@ function addNumberRow(label = '', value = '') {
 function showNumberRecord() {
   const record = numberRecords.find(item => item.id === companyRecords.value);
   recordName.value = record ? record.name : '';
+  companyData.querySelectorAll('[data-profile]').forEach(input => {
+    input.value = record?.profile?.[input.dataset.profile] || '';
+  });
   numberRows.replaceChildren();
   const rows = record ? record.entries : [['労働保険番号',''],['雇用保険適用事業所番号','']];
   rows.forEach(([label,value]) => addNumberRow(label,value));
@@ -88,6 +112,11 @@ function showNumberRecord() {
 function refreshNumbers(selected = '') {
   google.script.run.withSuccessHandler(records => {
     numberRecords = records;
+    const current = issueCompany.value;
+    issueCompany.replaceChildren(new Option('新規会社', ''));
+    records.forEach(record => issueCompany.add(new Option(record.name, record.id)));
+    issueCompany.value = current;
+    updateIssueCompany();
     companyRecords.replaceChildren(new Option('新規登録', ''));
     records.forEach(record => companyRecords.add(new Option(record.name, record.id)));
     companyRecords.value = selected;
@@ -113,7 +142,7 @@ companyData.addEventListener('submit', event => {
     button.disabled = false;
     companyRecords.disabled = false;
     numberStatus.textContent = error.message;
-  }).saveCompanyNumbers({id:companyRecords.value,name:recordName.value,entries});
+  }).saveCompanyNumbers({id:companyRecords.value,name:recordName.value,entries,profile:Object.fromEntries([...companyData.querySelectorAll('[data-profile]')].map(input => [input.dataset.profile,input.value]))});
 });
 refreshNumbers();
 const draft = document.getElementById('draft');

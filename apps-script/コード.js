@@ -18,6 +18,7 @@ function doGet(event) {
     page.documents = WOMEN_R8_DOCUMENTS;
     page.invitation = params.invite ? readGrantInvitation_(params.invite) : null;
     if (!page.invitation) requireGrantAdmin_();
+    page.prefill = page.invitation?.prefill || {};
     page.inviteToken = page.invitation ? params.invite : '';
     return page.evaluate()
       .setTitle('令和8年度 女性活躍情報公開促進奨励金 | 書類受付')
@@ -232,9 +233,10 @@ function submitWomenR8(form) {
     folder = root.createFolder(receipt);
     uploads.forEach(([key, blob]) => folder.createFile(blob.setName(key + '.pdf')));
     const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
+    if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
     sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
       ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
-      uploads.length, folder.getUrl()]);
+      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120))]);
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
@@ -265,7 +267,7 @@ function getWomenR8Storage_() {
   DriveApp.getFileById(book.getId()).moveTo(root);
   const sheet = book.getSheets()[0];
   sheet.appendRow(['受付日時','受付ID','事業者区分','企業名・屋号','所在地','代表者役職・氏名',
-    '担当者名','メール','電話','備考','本店所在地条件','居住地と事業所地が異なる','添付数','書類フォルダ']);
+    '担当者名','メール','電話','備考','本店所在地条件','居住地と事業所地が異なる','添付数','書類フォルダ','代表者のふりがな']);
   sheet.setFrozenRows(1);
   props.setProperties({WOMEN_R8_FOLDER_ID: root.getId(), WOMEN_R8_SHEET_ID: book.getId()});
   return {root, sheet};
@@ -310,7 +312,10 @@ function listGrantInvitations() {
 
 function createGrantInvitation(input) {
   requireGrantAdmin_();
-  const company = String(input.company || '').trim();
+  const companyId = String(input.companyId || '');
+  const record = companyId ? listCompanyNumbers().find(item => item.id === companyId) : null;
+  if (companyId && !record) throw new Error('会社台帳から会社を選び直してください。');
+  const company = record ? record.name : String(input.company || '').trim();
   const email = String(input.email || '').trim();
   const grant = String(input.grant || '');
   if (!company || company.length > 120 || /[\r\n]/.test(company) || email.length > 180 ||
@@ -321,6 +326,14 @@ function createGrantInvitation(input) {
   const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
   const createdAt = Date.now();
   const invitation = {company, email, grant, createdAt, expiresAt: createdAt + 30 * 86400000};
+  if (record) {
+    invitation.companyId = record.id;
+    invitation.prefill = {...record.profile};
+    if (invitation.prefill.representativeKana) {
+      invitation.prefill.representativeKana = invitation.prefill.representativeKana.normalize('NFKC')
+        .replace(/[ァ-ヶヽヾ]/g, character => String.fromCharCode(character.charCodeAt(0) - 0x60));
+    }
+  }
   writeGrantInvitation_(token, invitation);
   return {token, ...grantInvitationMessage_(token, invitation)};
 }
@@ -452,7 +465,9 @@ function saveCompanyNumbers(input) {
       throw new Error('同名の会社は登録済みです。会社一覧から選択してください。');
     }
     const recordId = id || Utilities.getUuid();
-    const json = JSON.stringify({id: recordId, name, entries});
+    const profile = Object.fromEntries(Object.entries({"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]})
+      .map(([key, [, max]]) => [key, String(input.profile?.[key] || '').trim().slice(0, max)]));
+    const json = JSON.stringify({id: recordId, name, entries, profile});
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
     props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
     return recordId;

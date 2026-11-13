@@ -26,11 +26,12 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="grid">
 <div><label for="entity">事業者区分 <span class="req">必須</span></label><select id="entity" name="entity" required><option value="">選択してください</option><option value="company">法人</option><option value="sole">個人事業主</option></select></div>
 <div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= invitation ? invitation.company : '' ?>" <? if (invitation) { ?>readonly<? } ?> required></div>
-<div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" maxlength="250" required></div>
-<div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" maxlength="120" required></div>
-<div><label for="person">担当者名 <span class="req">必須</span></label><input id="person" name="person" autocomplete="name" maxlength="80" required></div>
+<div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" value="<?= prefill.address || '' ?>" maxlength="250" required></div>
+<div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" value="<?= prefill.representative || '' ?>" maxlength="120" required></div>
+<div><label for="representativeKana">代表者のふりがな（ひらがな）</label><input id="representativeKana" name="representativeKana" value="<?= prefill.representativeKana || '' ?>" maxlength="120"></div>
+<div><label for="person">担当者名 <span class="req">必須</span></label><input id="person" name="person" value="<?= prefill.person || '' ?>" autocomplete="name" maxlength="80" required></div>
 <div><label for="email">メールアドレス <span class="req">必須</span></label><input id="email" name="email" type="email" autocomplete="email" maxlength="180" required></div>
-<div><label for="phone">電話番号</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></div>
+<div><label for="phone">電話番号</label><input id="phone" name="phone" value="<?= prefill.phone || '' ?>" type="tel" autocomplete="tel" maxlength="40"></div>
 <div class="wide" data-condition="company" hidden><label for="location">登記上の本店が都外、または本社機能を持つ事業所と所在地が異なりますか？ <span class="req">必須</span></label><select id="location" name="location" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 </div></section>
