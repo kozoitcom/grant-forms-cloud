@@ -92,7 +92,7 @@ function addEmployee() {
   const select = document.createElement('select');
   select.dataset.employee = 'employment';
   select.required = true;
-  for (const [value, text] of [['','選択してください'],['regular','正規'],['nonregular','非正規']]) {
+  for (const [value, text] of [['','選択してください'],['regular','正規（正社員）'],['nonregular','非正規（パート・アルバイト・契約社員など）']]) {
     select.add(new Option(text, value));
   }
   label.append(select);
