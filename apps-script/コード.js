@@ -230,8 +230,21 @@ function submitWomenR8(form) {
     }
     const {root, sheet} = getWomenR8Storage_();
     const receipt = Utilities.getUuid();
-    folder = root.createFolder(receipt);
-    uploads.forEach(([key, blob]) => folder.createFile(blob.setName(key + '.pdf')));
+    const destinationId = PropertiesService.getScriptProperties().getProperty('GRANT_SUBMISSION_FOLDER_ID');
+    const destination = destinationId ? DriveApp.getFolderById(destinationId) : root;
+    if (destination.isTrashed()) throw new Error('保存先フォルダが削除されています。');
+    folder = destination.createFolder(company + ' - 女性活躍R8 - ' + receipt);
+    uploads.forEach(([key, blob]) => {
+      const title = WOMEN_R8_DOCUMENTS.find(document => document[0] === key)[1];
+      folder.createFile(blob.setName(title + '.pdf'));
+    });
+    folder.createFile('入力内容.json', JSON.stringify({
+      receipt, submittedAt: new Date().toISOString(), company, industry, entity,
+      ...Object.fromEntries(fields.map(([key], index) => [key, values[index]])),
+      representativeKana: String(form.representativeKana || '').trim().slice(0, 120),
+      location: corporate ? location : '', otherCity: corporate ? '' : otherCity,
+      genderCounts, employees
+    }, null, 2), MimeType.PLAIN_TEXT);
     const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
     if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
     sheet.getRange(1, 16).setValue('男女別人数・女性割合判定');
@@ -626,4 +639,32 @@ function saveGrantDocumentSettings(form) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Admin-only setting; never accepts a destination from applicant input. */
+function getSubmissionStorageSettings() {
+  requireGrantAdmin_();
+  const id = PropertiesService.getScriptProperties().getProperty('GRANT_SUBMISSION_FOLDER_ID');
+  if (!id) return {url:'', name:'標準の保存先（助成金別フォルダ）'};
+  const folder = DriveApp.getFolderById(id);
+  return {url:folder.getUrl(), name:folder.getName()};
+}
+
+function saveSubmissionStorageSettings(input) {
+  requireGrantAdmin_();
+  const value = String(input || '').trim();
+  const match = value.match(/^https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([A-Za-z0-9_-]+)(?:[?/#].*)?$/);
+  const id = match ? match[1] : (/^[A-Za-z0-9_-]{10,}$/.test(value) ? value : '');
+  if (!id) throw new Error('GoogleドライブのフォルダURLを入力してください。');
+  const folder = DriveApp.getFolderById(id);
+  if (folder.isTrashed()) throw new Error('削除済みのフォルダは指定できません。');
+  // Confirm actual write access before storing the destination; do not change permissions.
+  const probe = folder.createFile('Grant Forms Cloud - 保存先確認.txt', '保存先の書き込み確認', MimeType.PLAIN_TEXT);
+  probe.setTrashed(true);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    PropertiesService.getScriptProperties().setProperty('GRANT_SUBMISSION_FOLDER_ID', id);
+    return {url:folder.getUrl(), name:folder.getName()};
+  } finally { lock.releaseLock(); }
 }
