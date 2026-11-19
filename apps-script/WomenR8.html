@@ -55,8 +55,8 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <section><h2>提出書類</h2>
 <p>各項目につきPDFを1ファイル添付してください。複数ページは1ファイルにまとめ、添付の合計を20 MB以内にしてください。</p>
 <? documents.forEach(function(document) { ?>
-<div class="upload" data-condition="<?= document[2] ?>" hidden>
-<label for="<?= document[0] ?>"><?= document[1] ?> <span class="req">必須</span></label>
+<div class="upload" data-condition="<?= document[2] ?>" data-upload-not-required="<?= documentSettings[document[0]]?.uploadNotRequired ? 'yes' : 'no' ?>" hidden>
+<label for="<?= document[0] ?>"><?= document[1] ?> <span class="req"><?= documentSettings[document[0]]?.uploadNotRequired ? '申請者のアップロード不要' : '必須' ?></span></label>
 <p id="<?= document[0] ?>-help"><?= document[3] ?></p>
 <input type="file" id="<?= document[0] ?>" name="<?= document[0] ?>" accept=".pdf,application/pdf" aria-describedby="<?= document[0] ?>-help" disabled>
 </div>
@@ -142,8 +142,10 @@ function updateDocuments() {
     const shown = groups.has(row.dataset.condition);
     row.hidden = !shown;
     const input = row.querySelector('input, select');
-    input.disabled = !shown;
-    input.required = shown;
+    const uploadNotRequired = row.dataset.uploadNotRequired === 'yes';
+    input.disabled = !shown || uploadNotRequired;
+    input.required = shown && !uploadNotRequired;
+    row.style.opacity = uploadNotRequired ? '0.5' : '1';
   });
 }
 form.addEventListener('change', updateDocuments);

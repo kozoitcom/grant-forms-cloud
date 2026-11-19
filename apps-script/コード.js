@@ -16,6 +16,7 @@ function doGet(event) {
   if (event && event.parameter && event.parameter.grant === 'women-r8') {
     const page = HtmlService.createTemplateFromFile('WomenR8');
     page.documents = WOMEN_R8_DOCUMENTS;
+    page.documentSettings = getDocumentSettings_();
     page.invitation = params.invite ? readGrantInvitation_(params.invite) : null;
     if (!page.invitation) requireGrantAdmin_();
     page.prefill = page.invitation?.prefill || {};
@@ -207,7 +208,8 @@ function submitWomenR8(form) {
   if (corporate && location === 'yes') applicable.add('location');
   if (!corporate && otherCity === 'yes') applicable.add('otherCity');
   let total = 0;
-  const uploads = WOMEN_R8_DOCUMENTS.filter(([, , group]) => applicable.has(group))
+  const documentSettings = getDocumentSettings_();
+  const uploads = WOMEN_R8_DOCUMENTS.filter(([key, , group]) => applicable.has(group) && !documentSettings[key]?.uploadNotRequired)
     .map(([key, label]) => {
       const blob = form[key];
       if (!blob || typeof blob.getBytes !== 'function') throw new Error(label + 'を添付してください。');
@@ -565,4 +567,65 @@ function validateWomenR8Employees_(raw) {
   });
   if (JSON.stringify(cleaned).length > 45000) throw new Error('従業員一覧の入力内容が長すぎます。');
   return cleaned;
+}
+
+function getDocumentSettings_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('WOMEN_R8_DOCUMENT_SETTINGS');
+  return raw ? JSON.parse(raw) : {};
+}
+
+function listGrantDocumentSettings(grant) {
+  requireGrantAdmin_();
+  if (grant !== 'women-r8') throw new Error('助成金を選び直してください。');
+  const settings = getDocumentSettings_();
+  return WOMEN_R8_DOCUMENTS.map(([key,title]) => ({key,title,...settings[key]}));
+}
+
+function saveGrantDocumentSettings(form) {
+  requireGrantAdmin_();
+  const key = String(form.documentKey || '');
+  if (form.grant !== 'women-r8' || !WOMEN_R8_DOCUMENTS.some(doc => doc[0] === key)) {
+    throw new Error('提出書類を選び直してください。');
+  }
+  const uploads = [];
+  for (const type of ['blank','sample']) {
+    const blob = form[type];
+    if (!blob || typeof blob.getBytes !== 'function' || !blob.getName()) continue;
+    const name = blob.getName();
+    const bytes = blob.getBytes();
+    const pdf = /\.pdf$/i.test(name) && bytes.slice(0,5).join(',') === '37,80,68,70,45';
+    const office = /\.(docx|xlsx)$/i.test(name) && bytes[0] === 80 && bytes[1] === 75;
+    if ((!pdf && !office) || bytes.length > 20 * 1024 * 1024) {
+      throw new Error('PDF・Word（docx）・Excel（xlsx）を20 MB以内で登録してください。');
+    }
+    uploads.push({type,blob,name});
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const created = [];
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const settings = getDocumentSettings_();
+    const entry = settings[key] || {};
+    if (uploads.length) {
+      const folderId = props.getProperty('GRANT_DOCUMENT_TEMPLATE_FOLDER');
+      const folder = folderId ? DriveApp.getFolderById(folderId) :
+        DriveApp.createFolder('Grant Forms Cloud - 公式様式・管理者用見本');
+      if (!folderId) props.setProperty('GRANT_DOCUMENT_TEMPLATE_FOLDER', folder.getId());
+      for (const upload of uploads) {
+        const file = folder.createFile(upload.blob);
+        created.push(file);
+        entry[upload.type] = {id:file.getId(),name:upload.name,url:file.getUrl()};
+      }
+    }
+    entry.uploadNotRequired = form.uploadNotRequired === 'on' || form.uploadNotRequired === 'true';
+    settings[key] = entry;
+    props.setProperty('WOMEN_R8_DOCUMENT_SETTINGS', JSON.stringify(settings));
+    return true;
+  } catch (error) {
+    created.forEach(file => { try { file.setTrashed(true); } catch (_) {} });
+    throw new Error('書類設定を保存できませんでした。');
+  } finally {
+    lock.releaseLock();
+  }
 }

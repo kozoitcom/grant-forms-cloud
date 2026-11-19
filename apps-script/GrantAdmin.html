@@ -1,7 +1,7 @@
 <!doctype html><html lang="ja"><head><base target="_top"><style>
 *{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
 </style></head><body><main>
-<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.9.0</span></div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.10.0</span></div>
 <section><h2>新しい助成金フォーム</h2>
 <form id="draft">
 <label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
@@ -37,6 +37,7 @@
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
 <details id="grant-requirements" open><summary>選択した助成金の必要項目・提出書類</summary><div id="requirements-content" role="status"></div></details>
+<div id="document-settings"></div><p id="document-settings-status" role="status"></p>
 <label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
 <p id="prefill-preview" role="status"></p>
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
@@ -62,6 +63,59 @@ const notice = document.getElementById('notice');
 const rows = document.getElementById('rows');
 const empty = document.getElementById('empty');
 let token;
+function loadDocumentSettings() {
+  const grant = document.getElementById('grant').value;
+  const root = document.getElementById('document-settings');
+  const status = document.getElementById('document-settings-status');
+  root.textContent = '書類設定を読み込み中…';
+  google.script.run.withSuccessHandler(documents => {
+    if (document.getElementById('grant').value !== grant) return;
+    root.replaceChildren();
+    for (const documentInfo of documents) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = documentInfo.title + (documentInfo.uploadNotRequired ? '（申請者アップロード不要）' : '');
+      details.append(summary);
+      const form = document.createElement('form');
+      for (const [name,value] of [['grant',grant],['documentKey',documentInfo.key]]) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden'; hidden.name = name; hidden.value = value;
+        form.append(hidden);
+      }
+      for (const [type,title] of [['blank','公式の空欄様式'],['sample','記入済み見本（管理者用）']]) {
+        const label = document.createElement('label');
+        label.textContent = title + '（PDF・docx・xlsx、20 MBまで）';
+        const file = document.createElement('input');
+        file.type = 'file'; file.name = type; file.accept = '.pdf,.docx,.xlsx';
+        label.append(file); form.append(label);
+        if (documentInfo[type]) {
+          const link = document.createElement('a');
+          link.href = documentInfo[type].url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          link.textContent = '登録済み：' + documentInfo[type].name;
+          form.append(link);
+        }
+      }
+      const label = document.createElement('label');
+      const check = document.createElement('input');
+      check.type = 'checkbox'; check.name = 'uploadNotRequired';
+      check.checked = Boolean(documentInfo.uploadNotRequired); check.style.width = 'auto';
+      label.append(check, ' 申請者のアップロード不要（添付欄をグレーアウト）');
+      form.append(label);
+      const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'この書類の設定を保存';
+      form.append(save);
+      form.addEventListener('submit', event => {
+        event.preventDefault(); save.disabled = true; status.textContent = '保存中…';
+        google.script.run.withSuccessHandler(() => {
+          status.textContent = '保存しました。'; loadDocumentSettings();
+        }).withFailureHandler(error => {
+          save.disabled = false; status.textContent = error.message;
+        }).saveGrantDocumentSettings(form);
+      });
+      details.append(form); root.append(details);
+    }
+  }).withFailureHandler(error => { root.textContent = error.message; }).listGrantDocumentSettings(grant);
+}
+
 const requirementsContent = document.getElementById('requirements-content');
 const grantSelector = document.getElementById('grant');
 let requirementsRequest = 0;
@@ -87,7 +141,9 @@ function showGrantRequirements() {
   }).getGrantRequirements(grantSelector.value);
 }
 grantSelector.addEventListener('change', showGrantRequirements);
+grantSelector.addEventListener('change', loadDocumentSettings);
 showGrantRequirements();
+loadDocumentSettings();
 const companyData = document.getElementById('company-data');
 const companyRecords = document.getElementById('company-records');
 const recordName = document.getElementById('record-name');
