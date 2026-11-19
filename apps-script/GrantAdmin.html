@@ -1,7 +1,14 @@
 <!doctype html><html lang="ja"><head><base target="_top"><style>
 *{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
 </style></head><body><main>
-<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.10.1</span></div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.11.0</span></div>
+<section><h2>申請書類の保存先</h2>
+<p>提出後、指定フォルダ内に「会社名・助成金・受付ID」のフォルダを作り、提出書類と入力データをまとめて保存します。変更は今後の提出に適用されます。</p>
+<form id="storage-settings"><label for="storage-folder">Googleドライブの保存先フォルダURL</label>
+<input id="storage-folder" type="url" placeholder="https://drive.google.com/drive/folders/..." required>
+<button type="submit">保存先を設定</button></form>
+<p id="storage-status" role="status"></p><a id="storage-link" target="_blank" rel="noopener noreferrer" hidden>保存先フォルダを開く</a>
+</section>
 <section><h2>新しい助成金フォーム</h2>
 <form id="draft">
 <label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
@@ -56,6 +63,28 @@
 <table><thead><tr><th>操作</th><th>会社</th><th>助成金</th><th>宛先</th><th>送信日時</th><th>提出状況</th><th>女性割合の確認</th></tr></thead><tbody id="rows"></tbody></table>
 <p id="empty" role="status"></p></section>
 </main><script>
+const storageForm = document.getElementById('storage-settings');
+const storageStatus = document.getElementById('storage-status');
+function showStorage(settings) {
+  document.getElementById('storage-folder').value = settings.url;
+  const link = document.getElementById('storage-link');
+  link.hidden = !settings.url;
+  if (settings.url) link.href = settings.url;
+  storageStatus.textContent = '現在の保存先：' + settings.name;
+}
+google.script.run.withSuccessHandler(showStorage).withFailureHandler(error => {
+  storageStatus.textContent = error.message;
+}).getSubmissionStorageSettings();
+storageForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const button = storageForm.querySelector('button');
+  button.disabled = true; storageStatus.textContent = '書き込み権限を確認して保存中…';
+  google.script.run.withSuccessHandler(settings => {
+    button.disabled = false; showStorage(settings);
+  }).withFailureHandler(error => {
+    button.disabled = false; storageStatus.textContent = error.message;
+  }).saveSubmissionStorageSettings(document.getElementById('storage-folder').value);
+});
 const issue = document.getElementById('issue');
 const issueButton = issue.querySelector('button');
 const preview = document.getElementById('preview');
