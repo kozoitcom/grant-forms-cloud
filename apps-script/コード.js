@@ -293,7 +293,7 @@ function grantInvitationKey_(token) {
 function readGrantInvitation_(token) {
   const raw = PropertiesService.getScriptProperties().getProperty(grantInvitationKey_(token));
   const invitation = raw ? JSON.parse(raw) : null;
-  if (!invitation || invitation.grant !== 'women-r8' || Date.now() > invitation.expiresAt) {
+  if (!invitation || invitation.grant !== 'women-r8' || invitation.deletedAt || Date.now() > invitation.expiresAt) {
     throw new Error('受付リンクが無効か、期限が切れています。');
   }
   return invitation;
@@ -307,7 +307,8 @@ function listGrantInvitations() {
   requireGrantAdmin_();
   const properties = PropertiesService.getScriptProperties().getProperties();
   return Object.entries(properties).filter(([key]) => key.startsWith(GRANT_INVITE_PREFIX))
-    .map(([, value]) => JSON.parse(value)).sort((a, b) => b.createdAt - a.createdAt);
+    .map(([key, value]) => ({...JSON.parse(value), historyId: key}))
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function createGrantInvitation(input) {
@@ -471,6 +472,27 @@ function saveCompanyNumbers(input) {
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
     props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
     return recordId;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function setGrantHistoryDeleted(historyId, deleted) {
+  requireGrantAdmin_();
+  if (typeof historyId !== 'string' ||
+      !/^GRANT_INVITE_[A-Za-z0-9_-]{43}=?$/.test(historyId) ||
+      typeof deleted !== 'boolean') throw new Error('履歴を選び直してください。');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty(historyId);
+    if (!raw) throw new Error('履歴が見つかりません。');
+    const invitation = JSON.parse(raw);
+    if (deleted) invitation.deletedAt = Date.now();
+    else delete invitation.deletedAt;
+    props.setProperty(historyId, JSON.stringify(invitation));
+    return true;
   } finally {
     lock.releaseLock();
   }

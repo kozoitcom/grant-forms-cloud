@@ -45,7 +45,8 @@
 <button id="send" type="button">この内容でメール送信</button></div>
 <p id="notice" role="status"></p></section>
 <section id="history"><h2>案内・提出履歴</h2>
-<table><thead><tr><th>会社</th><th>助成金</th><th>宛先</th><th>送信日時</th><th>提出状況</th></tr></thead><tbody id="rows"></tbody></table>
+<label><input id="show-deleted" type="checkbox" style="width:auto"> 削除した履歴を表示</label>
+<table><thead><tr><th>操作</th><th>会社</th><th>助成金</th><th>宛先</th><th>送信日時</th><th>提出状況</th></tr></thead><tbody id="rows"></tbody></table>
 <p id="empty" role="status"></p></section>
 </main><script>
 const issue = document.getElementById('issue');
@@ -194,12 +195,34 @@ draft.addEventListener('submit', event => {
 });
 refreshDrafts();
 function showError(error) { notice.textContent = error.message || '処理できませんでした。'; }
+document.getElementById('show-deleted').addEventListener('change', refresh);
 function refresh() {
   google.script.run.withSuccessHandler(entries => {
+    entries = entries.filter(item => Boolean(item.deletedAt) === document.getElementById('show-deleted').checked);
     rows.replaceChildren();
     empty.textContent = entries.length ? '' : '案内履歴はありません。';
     for (const item of entries) {
       const row = rows.insertRow();
+      const action = row.insertCell();
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = item.deletedAt ? '復元' : '削除';
+      remove.style.marginTop = '0';
+      remove.style.whiteSpace = 'nowrap';
+      remove.style.background = item.deletedAt ? '#136960' : '#a12b32';
+      remove.setAttribute('aria-label', item.company + 'の履歴を' + remove.textContent);
+      remove.onclick = () => {
+        if (!item.deletedAt && !confirm(item.company + 'の案内履歴を削除しますか？会社専用リンクも停止します。削除後に復元できます。')) return;
+        remove.disabled = true;
+        google.script.run.withSuccessHandler(() => {
+          notice.textContent = item.deletedAt ? '履歴を復元しました。' : '履歴を削除しました。';
+          refresh();
+        }).withFailureHandler(error => {
+          remove.disabled = false;
+          showError(error);
+        }).setGrantHistoryDeleted(item.historyId, !item.deletedAt);
+      };
+      action.append(remove);
       const grantName = document.getElementById('grant').querySelector('option[value="' + item.grant + '"]')?.textContent || item.grant;
       const sent = item.sentAt ? new Date(item.sentAt).toLocaleString('ja-JP', {timeZone:'Asia/Tokyo'}) :
         item.sending ? '送信結果を要確認' : '未送信';
