@@ -36,6 +36,7 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 </div></section>
 <section><h2>男女別人数・女性割合</h2>
+<p><strong>代表者は「労働者」の人数に含めないでください。</strong></p>
 <p>支給申請日時点の人数を入力してください。労働者・係長職・管理職・役員のいずれかで女性割合が40％未満かを確認します。区分間で同じ人が含まれる場合があるため、各区分を合算しません。</p>
 <table style="width:100%"><thead><tr><th>区分</th><th>男性</th><th>女性</th><th>合計</th><th>女性割合</th></tr></thead><tbody>
 <tr><th>労働者</th><td><input aria-label="労働者の男性人数" name="workersMale" type="number" min="0" max="100000" step="1" required></td><td><input aria-label="労働者の女性人数" name="workersFemale" type="number" min="0" max="100000" step="1" required></td><td id="workersTotal">—</td><td id="workersRatio">—</td></tr>
