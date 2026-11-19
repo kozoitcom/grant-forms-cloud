@@ -497,3 +497,30 @@ function setGrantHistoryDeleted(historyId, deleted) {
     lock.releaseLock();
   }
 }
+
+function getGrantRequirements(grant) {
+  requireGrantAdmin_();
+  if (grant !== 'women-r8') throw new Error('この助成金の必要項目は未登録です。');
+  const conditions = {
+    all: '必須', company: '法人のみ必須', sole: '個人事業主のみ必須',
+    location: '登記上の本店が都外、または本社機能のある事業所と所在地が異なる場合',
+    otherCity: '個人事業主で居住地と事業所地が異なる場合'
+  };
+  return {
+    fields: [
+      '事業者区分（法人／個人事業主）・必須',
+      '企業名・屋号・必須',
+      '事業所所在地・必須',
+      '代表者の役職・氏名・必須',
+      '代表者のふりがな（ひらがな）・任意',
+      '担当者名・必須',
+      'メールアドレス・必須',
+      '電話番号・任意',
+      '登記上の本店の所在地条件・法人は回答必須',
+      '居住地と事業所地が異なるか・個人事業主は回答必須',
+      '備考・任意'
+    ],
+    documents: WOMEN_R8_DOCUMENTS.map(([, title, condition, note]) =>
+      title + '【' + conditions[condition] + '】 ' + note)
+  };
+}

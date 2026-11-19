@@ -1,7 +1,7 @@
 <!doctype html><html lang="ja"><head><base target="_top"><style>
 *{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
 </style></head><body><main>
-<h1>Grant Forms Cloud 管理画面</h1>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.7.0</span></div>
 <section><h2>新しい助成金フォーム</h2>
 <form id="draft">
 <label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
@@ -32,6 +32,7 @@
 </form></section>
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<details id="grant-requirements" open><summary>選択した助成金の必要項目・提出書類</summary><div id="requirements-content" role="status"></div></details>
 <label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
 <p id="prefill-preview" role="status"></p>
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
@@ -57,6 +58,32 @@ const notice = document.getElementById('notice');
 const rows = document.getElementById('rows');
 const empty = document.getElementById('empty');
 let token;
+const requirementsContent = document.getElementById('requirements-content');
+const grantSelector = document.getElementById('grant');
+let requirementsRequest = 0;
+function showGrantRequirements() {
+  const request = ++requirementsRequest;
+  requirementsContent.textContent = '読み込み中…';
+  google.script.run.withSuccessHandler(result => {
+    if (request !== requirementsRequest) return;
+    requirementsContent.replaceChildren();
+    for (const [heading, values] of [['入力項目', result.fields], ['提出書類', result.documents]]) {
+      const title = document.createElement('h3');
+      title.textContent = heading;
+      const list = document.createElement('ul');
+      for (const item of values) {
+        const row = document.createElement('li');
+        row.textContent = item;
+        list.append(row);
+      }
+      requirementsContent.append(title, list);
+    }
+  }).withFailureHandler(error => {
+    if (request === requirementsRequest) requirementsContent.textContent = error.message;
+  }).getGrantRequirements(grantSelector.value);
+}
+grantSelector.addEventListener('change', showGrantRequirements);
+showGrantRequirements();
 const companyData = document.getElementById('company-data');
 const companyRecords = document.getElementById('company-records');
 const recordName = document.getElementById('record-name');
