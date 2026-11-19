@@ -82,3 +82,14 @@ jobs:
             fi
           done
           echo "Verified Apps Script files and application source after push."
+
+      - name: Update existing web app deployment
+        working-directory: apps-script
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! clasp deploy --deploymentId AKfycbxVXKLufKA_db9AYTH7BNSJYnFKv0weC1Yadiyqv_cSJ9NDj2YHNPmrZuMRcMRkzoA --description "GitHub ${GITHUB_SHA:0:12}" > /tmp/grant-deploy-result 2>&1; then
+            echo "::error::Web app deployment update failed."
+            exit 1
+          fi
+          echo "Updated existing web app deployment."
