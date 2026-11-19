@@ -188,6 +188,7 @@ const WOMEN_R8_LIMIT = 20 * 1024 * 1024;
 
 function submitWomenR8(form) {
   if (!form || form.website) throw new Error('送信できませんでした。');
+  const employees = validateWomenR8Employees_(form.employeesJson);
   const genderCounts = validateWomenR8Counts_(form);
   const fields = [['company',120],['address',250],['representative',120],
     ['person',80],['email',180],['phone',40],['note',1000]];
@@ -236,9 +237,10 @@ function submitWomenR8(form) {
     const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
     if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
     sheet.getRange(1, 16).setValue('男女別人数・女性割合判定');
+    sheet.getRange(1, 17).setValue('従業員一覧');
     sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
       ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
-      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts)]);
+      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts), JSON.stringify(employees)]);
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
@@ -544,4 +546,23 @@ function validateWomenR8Counts_(form) {
     return {key, label, male, female, total, below40: total > 0 && female * 5 < total * 2};
   });
   return {groups: counts, eligible: counts.some(group => group.below40)};
+}
+
+function validateWomenR8Employees_(raw) {
+  let employees;
+  try { employees = JSON.parse(String(raw || '[]')); }
+  catch (_) { throw new Error('従業員一覧を確認してください。'); }
+  if (!Array.isArray(employees)) throw new Error('従業員一覧を確認してください。');
+  const cleaned = employees.map(employee => {
+    const name = String(employee?.name || '').trim();
+    const position = String(employee?.position || '').trim();
+    const employment = String(employee?.employment || '');
+    if (!name || name.length > 120 || !position || position.length > 120 ||
+        !['regular', 'nonregular'].includes(employment)) {
+      throw new Error('従業員の氏名・役職・雇用区分を確認してください。');
+    }
+    return {name, position, employment};
+  });
+  if (JSON.stringify(cleaned).length > 45000) throw new Error('従業員一覧の入力内容が長すぎます。');
+  return cleaned;
 }

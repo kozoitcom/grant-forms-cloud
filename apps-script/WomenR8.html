@@ -35,6 +35,12 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="wide" data-condition="company" hidden><label for="location">登記上の本店が都外、または本社機能を持つ事業所と所在地が異なりますか？ <span class="req">必須</span></label><select id="location" name="location" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 </div></section>
+<section><h2>従業員一覧</h2>
+<p>従業員ごとに氏名・役職・雇用区分を入力してください。役職がない場合は「役職なし」と入力してください。</p>
+<div id="employee-rows"></div>
+<button id="add-employee" type="button">従業員を追加</button>
+<input type="hidden" name="employeesJson" id="employees-json">
+</section>
 <section><h2>男女別人数・女性割合</h2>
 <p><strong>代表者は「労働者」の人数に含めないでください。</strong></p>
 <p>支給申請日時点の人数を入力してください。労働者・係長職・管理職・役員のいずれかで女性割合が40％未満かを確認します。区分間で同じ人が含まれる場合があるため、各区分を合算しません。</p>
@@ -64,6 +70,47 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 const form = document.getElementById('form');
 const button = form.querySelector('button');
 const status = document.getElementById('status');
+const employeeRows = document.getElementById('employee-rows');
+function addEmployee() {
+  const row = document.createElement('fieldset');
+  row.style.marginBottom = '14px';
+  const legend = document.createElement('legend');
+  row.append(legend);
+  for (const [key, label, max] of [['name','氏名',120],['position','役職',120]]) {
+    const wrapper = document.createElement('label');
+    wrapper.textContent = label + '（必須）';
+    const input = document.createElement('input');
+    input.dataset.employee = key;
+    input.maxLength = max;
+    input.required = true;
+    wrapper.append(input);
+    row.append(wrapper);
+  }
+  const label = document.createElement('label');
+  label.textContent = '雇用区分（必須）';
+  const select = document.createElement('select');
+  select.dataset.employee = 'employment';
+  select.required = true;
+  for (const [value, text] of [['','選択してください'],['regular','正規'],['nonregular','非正規']]) {
+    select.add(new Option(text, value));
+  }
+  label.append(select);
+  row.append(label);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.textContent = 'この従業員を削除';
+  remove.onclick = () => { row.remove(); renumberEmployees(); };
+  row.append(remove);
+  employeeRows.append(row);
+  renumberEmployees();
+}
+function renumberEmployees() {
+  [...employeeRows.children].forEach((row, index) => {
+    row.querySelector('legend').textContent = '従業員 ' + (index + 1);
+  });
+}
+document.getElementById('add-employee').addEventListener('click', addEmployee);
+addEmployee();
 function updateGenderCounts() {
   let complete = true;
   let eligible = false;
@@ -106,11 +153,18 @@ form.addEventListener('submit', event => {
     status.textContent = 'PDFのみ、合計20 MB以内で添付してください。';
     return;
   }
+  const employees = [...employeeRows.children].map(row => Object.fromEntries(
+    [...row.querySelectorAll('[data-employee]')].map(input => [input.dataset.employee, input.value.trim()])
+  ));
+  document.getElementById('employees-json').value = JSON.stringify(employees);
   button.disabled = true;
   status.textContent = '書類を送信しています…';
   google.script.run.withSuccessHandler(result => {
     status.textContent = '受付が完了しました。受付ID ' + result.receipt;
     form.reset();
+    employeeRows.replaceChildren();
+    addEmployee();
+    updateGenderCounts();
     updateDocuments();
     button.disabled = false;
   }).withFailureHandler(error => {
