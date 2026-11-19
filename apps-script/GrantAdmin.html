@@ -1,7 +1,7 @@
 <!doctype html><html lang="ja"><head><base target="_top"><style>
 *{box-sizing:border-box}body{margin:0;background:#eff4f5;color:#20343d;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 16px}section{background:white;border:1px solid #d7e3e5;border-radius:12px;margin:18px 0;padding:20px}h1,h2{margin:0 0 14px}label{display:block;font-weight:650;margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:8px;border:1px solid #879ba2;border-radius:6px}button{font:inherit;border:0;border-radius:7px;padding:9px 16px;background:#136960;color:white;margin-top:12px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}textarea{min-height:180px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #dde6e9;overflow-wrap:anywhere}#history{overflow:auto}#notice{white-space:pre-wrap}
 </style></head><body><main>
-<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.8.0</span></div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span style="white-space:nowrap;color:#526973" aria-label="バージョン">Ver. 1.9.0</span></div>
 <section><h2>新しい助成金フォーム</h2>
 <form id="draft">
 <label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
@@ -15,7 +15,11 @@
 </form>
 <h3>保存済みの下書き</h3><ul id="drafts"></ul>
 </section>
-<section><h2>会社別の管理者入力項目</h2>
+<section><h2>会社台帳一覧</h2>
+<label for="ledger-search">会社名で検索</label><input id="ledger-search" type="search" placeholder="会社名を入力">
+<p id="ledger-status" role="status"></p><div id="ledger-list"></div>
+</section>
+<section id="company-editor"><h2>会社台帳の登録・編集</h2>
 <p>申請先の入力欄と同じ名前で登録できます。各番号は「コピー」で申請画面へ貼り付けられます。</p>
 <label for="company-records">登録済みの会社</label><select id="company-records"><option value="">新規登録</option></select>
 <form id="company-data">
@@ -90,6 +94,7 @@ const recordName = document.getElementById('record-name');
 const numberRows = document.getElementById('number-rows');
 const numberStatus = document.getElementById('number-status');
 let numberRecords = [];
+let ledgerHistory = [];
 const issueCompany = document.getElementById('issue-company');
 const issueName = document.getElementById('company');
 function updateIssueCompany() {
@@ -140,6 +145,7 @@ function showNumberRecord() {
 function refreshNumbers(selected = '') {
   google.script.run.withSuccessHandler(records => {
     numberRecords = records;
+    renderCompanyLedger();
     const current = issueCompany.value;
     issueCompany.replaceChildren(new Option('新規会社', ''));
     records.forEach(record => issueCompany.add(new Option(record.name, record.id)));
@@ -173,6 +179,73 @@ companyData.addEventListener('submit', event => {
   }).saveCompanyNumbers({id:companyRecords.value,name:recordName.value,entries,profile:Object.fromEntries([...companyData.querySelectorAll('[data-profile]')].map(input => [input.dataset.profile,input.value]))});
 });
 refreshNumbers();
+document.getElementById('ledger-search').addEventListener('input', renderCompanyLedger);
+function renderCompanyLedger() {
+  const list = document.getElementById('ledger-list');
+  const query = document.getElementById('ledger-search').value.trim().toLocaleLowerCase();
+  list.replaceChildren();
+  const selected = numberRecords.filter(record => record.name.toLocaleLowerCase().includes(query));
+  document.getElementById('ledger-status').textContent = selected.length + '社を表示';
+  const profileLabels = {
+    address:'事業所所在地', representative:'代表者の役職・氏名',
+    representativeKana:'代表者のふりがな', person:'担当者名', phone:'電話番号'
+  };
+  for (const record of selected) {
+    const details = document.createElement('details');
+    details.style.padding = '12px 0';
+    const summary = document.createElement('summary');
+    summary.textContent = record.name;
+    summary.style.cursor = 'pointer';
+    details.append(summary);
+    const table = document.createElement('table');
+    const addField = (label, value) => {
+      const row = table.insertRow();
+      const heading = document.createElement('th');
+      heading.scope = 'row';
+      heading.textContent = label;
+      row.append(heading);
+      row.insertCell().textContent = value || '未登録';
+    };
+    addField('会社名', record.name);
+    Object.entries(profileLabels).forEach(([key,label]) => addField(label, record.profile?.[key]));
+    (record.entries || []).forEach(([label,value]) => addField(label,value));
+    details.append(table);
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.textContent = 'この会社の台帳を編集';
+    edit.onclick = () => {
+      companyRecords.value = record.id;
+      showNumberRecord();
+      document.getElementById('company-editor').scrollIntoView({behavior:'smooth'});
+      recordName.focus();
+    };
+    details.append(edit);
+    const heading = document.createElement('h3');
+    heading.textContent = '申請・提出履歴';
+    details.append(heading);
+    const history = ledgerHistory.filter(item => item.companyId === record.id);
+    if (!history.length) {
+      const emptyHistory = document.createElement('p');
+      emptyHistory.textContent = '会社台帳に紐づいた履歴はありません。';
+      details.append(emptyHistory);
+    }
+    for (const item of history) {
+      const line = document.createElement('p');
+      const title = document.getElementById('grant').querySelector('option[value="' + item.grant + '"]')?.textContent || item.grant;
+      line.textContent = title + ' ／ ' + (item.deletedAt ? '削除済み' : item.receipt ? '提出済み' : '未提出');
+      if (item.receipt && item.folderUrl) {
+        const link = document.createElement('a');
+        link.href = item.folderUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = ' 書類フォルダを開く';
+        line.append(link);
+      }
+      details.append(line);
+    }
+    list.append(details);
+  }
+}
 const draft = document.getElementById('draft');
 const draftStatus = document.getElementById('draft-status');
 const draftList = document.getElementById('drafts');
@@ -225,6 +298,8 @@ function showError(error) { notice.textContent = error.message || '処理でき�
 document.getElementById('show-deleted').addEventListener('change', refresh);
 function refresh() {
   google.script.run.withSuccessHandler(entries => {
+    ledgerHistory = entries;
+    renderCompanyLedger();
     entries = entries.filter(item => Boolean(item.deletedAt) === document.getElementById('show-deleted').checked);
     rows.replaceChildren();
     empty.textContent = entries.length ? '' : '案内履歴はありません。';
