@@ -35,6 +35,15 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="wide" data-condition="company" hidden><label for="location">登記上の本店が都外、または本社機能を持つ事業所と所在地が異なりますか？ <span class="req">必須</span></label><select id="location" name="location" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 </div></section>
+<section><h2>男女別人数・女性割合</h2>
+<p>支給申請日時点の人数を入力してください。労働者・係長職・管理職・役員のいずれかで女性割合が40％未満かを確認します。区分間で同じ人が含まれる場合があるため、各区分を合算しません。</p>
+<table style="width:100%"><thead><tr><th>区分</th><th>男性</th><th>女性</th><th>合計</th><th>女性割合</th></tr></thead><tbody>
+<tr><th>労働者</th><td><input aria-label="労働者の男性人数" name="workersMale" type="number" min="0" max="100000" step="1" required></td><td><input aria-label="労働者の女性人数" name="workersFemale" type="number" min="0" max="100000" step="1" required></td><td id="workersTotal">—</td><td id="workersRatio">—</td></tr>
+<tr><th>係長職</th><td><input aria-label="係長職の男性人数" name="chiefsMale" type="number" min="0" max="100000" step="1" required></td><td><input aria-label="係長職の女性人数" name="chiefsFemale" type="number" min="0" max="100000" step="1" required></td><td id="chiefsTotal">—</td><td id="chiefsRatio">—</td></tr>
+<tr><th>管理職</th><td><input aria-label="管理職の男性人数" name="managersMale" type="number" min="0" max="100000" step="1" required></td><td><input aria-label="管理職の女性人数" name="managersFemale" type="number" min="0" max="100000" step="1" required></td><td id="managersTotal">—</td><td id="managersRatio">—</td></tr>
+<tr><th>役員</th><td><input aria-label="役員の男性人数" name="officersMale" type="number" min="0" max="100000" step="1" required></td><td><input aria-label="役員の女性人数" name="officersFemale" type="number" min="0" max="100000" step="1" required></td><td id="officersTotal">—</td><td id="officersRatio">—</td></tr>
+</tbody></table><p>該当者がいない区分は男女とも0を入力してください。合計0人の区分は判定対象外です。人数の区分は募集要項の定義に合わせてください。</p>
+<p id="gender-result" role="status"></p></section>
 <section><h2>提出書類</h2>
 <p>各項目につきPDFを1ファイル添付してください。複数ページは1ファイルにまとめ、添付の合計を20 MB以内にしてください。</p>
 <? documents.forEach(function(document) { ?>
@@ -54,6 +63,27 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 const form = document.getElementById('form');
 const button = form.querySelector('button');
 const status = document.getElementById('status');
+function updateGenderCounts() {
+  let complete = true;
+  let eligible = false;
+  for (const key of ['workers','chiefs','managers','officers']) {
+    const male = form.elements[key + 'Male'];
+    const female = form.elements[key + 'Female'];
+    const valid = male.value !== '' && female.value !== '' && male.checkValidity() && female.checkValidity();
+    complete = complete && valid;
+    const total = Number(male.value) + Number(female.value);
+    document.getElementById(key + 'Total').textContent = valid ? total + '人' : '—';
+    document.getElementById(key + 'Ratio').textContent = !valid ? '—' : total === 0 ? '対象外' :
+      (Number(female.value) / total * 100).toFixed(2) + '％' +
+      (Number(female.value) * 5 < total * 2 ? '（40％未満）' : '（40％以上）');
+    eligible = eligible || (valid && total > 0 && Number(female.value) * 5 < total * 2);
+  }
+  document.getElementById('gender-result').textContent = !complete ? '人数を入力すると判定します。' :
+    eligible ? '女性割合40％未満の条件に該当します。他の申請要件もご確認ください。' :
+    '入力した人数では、女性割合40％未満の条件を確認できません。区分と人数をご確認ください。';
+}
+form.addEventListener('input', updateGenderCounts);
+updateGenderCounts();
 function updateDocuments() {
   const entity = form.elements.entity.value;
   const groups = new Set(entity ? ['all', entity] : []);

@@ -188,6 +188,7 @@ const WOMEN_R8_LIMIT = 20 * 1024 * 1024;
 
 function submitWomenR8(form) {
   if (!form || form.website) throw new Error('送信できませんでした。');
+  const genderCounts = validateWomenR8Counts_(form);
   const fields = [['company',120],['address',250],['representative',120],
     ['person',80],['email',180],['phone',40],['note',1000]];
   const values = fields.map(([key, max]) => String(form[key] || '').trim().slice(0, max));
@@ -234,12 +235,14 @@ function submitWomenR8(form) {
     uploads.forEach(([key, blob]) => folder.createFile(blob.setName(key + '.pdf')));
     const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
     if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
+    sheet.getRange(1, 16).setValue('男女別人数・女性割合判定');
     sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
       ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
-      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120))]);
+      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts)]);
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
+      invitation.genderCounts = genderCounts;
       invitation.receipt = receipt;
       invitation.folderUrl = folder.getUrl();
       writeGrantInvitation_(token, invitation);
@@ -508,6 +511,7 @@ function getGrantRequirements(grant) {
   };
   return {
     fields: [
+      '労働者・係長職・管理職・役員それぞれの男性人数・女性人数・必須（合計と女性割合を自動計算）',
       '事業者区分（法人／個人事業主）・必須',
       '企業名・屋号・必須',
       '事業所所在地・必須',
@@ -523,4 +527,21 @@ function getGrantRequirements(grant) {
     documents: WOMEN_R8_DOCUMENTS.map(([, title, condition, note]) =>
       title + '【' + conditions[condition] + '】 ' + note)
   };
+}
+
+function validateWomenR8Counts_(form) {
+  const groups = [["workers","労働者"],["chiefs","係長職"],["managers","管理職"],["officers","役員"]];
+  const counts = groups.map(([key, label]) => {
+    const values = ['Male', 'Female'].map(suffix => {
+      const raw = String(form[key + suffix] ?? '').trim();
+      if (!/^\d+$/.test(raw) || Number(raw) > 100000) {
+        throw new Error(label + 'の男女別人数を0以上の整数で入力してください。');
+      }
+      return Number(raw);
+    });
+    const [male, female] = values;
+    const total = male + female;
+    return {key, label, male, female, total, below40: total > 0 && female * 5 < total * 2};
+  });
+  return {groups: counts, eligible: counts.some(group => group.below40)};
 }
