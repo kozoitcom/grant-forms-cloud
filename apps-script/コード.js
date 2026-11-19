@@ -189,6 +189,8 @@ const WOMEN_R8_LIMIT = 20 * 1024 * 1024;
 
 function submitWomenR8(form) {
   if (!form || form.website) throw new Error('送信できませんでした。');
+  const industry = String(form.industry || '').trim();
+  if (!industry || industry.length > 120) throw new Error('業種を入力してください。');
   const employees = validateWomenR8Employees_(form.employeesJson);
   const genderCounts = validateWomenR8Counts_(form);
   const fields = [['company',120],['address',250],['representative',120],
@@ -240,9 +242,10 @@ function submitWomenR8(form) {
     if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
     sheet.getRange(1, 16).setValue('男女別人数・女性割合判定');
     sheet.getRange(1, 17).setValue('従業員一覧');
+    sheet.getRange(1, 18).setValue('業種');
     sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
       ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
-      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts), JSON.stringify(employees)]);
+      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts), JSON.stringify(employees), safe(industry)]);
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
@@ -473,7 +476,7 @@ function saveCompanyNumbers(input) {
       throw new Error('同名の会社は登録済みです。会社一覧から選択してください。');
     }
     const recordId = id || Utilities.getUuid();
-    const profile = Object.fromEntries(Object.entries({"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]})
+    const profile = Object.fromEntries(Object.entries({"industry":["業種",120],"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]})
       .map(([key, [, max]]) => [key, String(input.profile?.[key] || '').trim().slice(0, max)]));
     const json = JSON.stringify({id: recordId, name, entries, profile});
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
@@ -518,6 +521,7 @@ function getGrantRequirements(grant) {
       '労働者・係長職・管理職・役員それぞれの男性人数・女性人数・必須（合計と女性割合を自動計算）',
       '事業者区分（法人／個人事業主）・必須',
       '企業名・屋号・必須',
+      '業種・必須',
       '事業所所在地・必須',
       '代表者の役職・氏名・必須',
       '代表者のふりがな（ひらがな）・任意',
