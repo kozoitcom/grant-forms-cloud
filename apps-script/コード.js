@@ -83,12 +83,6 @@ function setupStorage() {
 
 const WOMEN_R8_DOCUMENTS = [
   [
-    "application",
-    "支給申請書（様式第1号）",
-    "all",
-    "p.12"
-  ],
-  [
     "offices",
     "事業所一覧（様式第1号別紙）",
     "all",
