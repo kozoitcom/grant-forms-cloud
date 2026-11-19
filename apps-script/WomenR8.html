@@ -36,7 +36,8 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 </div></section>
 <section><h2>従業員一覧</h2>
-<p>従業員ごとに氏名・役職・雇用区分を入力してください。役職がない場合は「役職なし」と入力してください。</p>
+<p>従業員ごとに氏名・役職・雇用区分を入力してください。役職がない場合は「なし」と入力してください。</p>
+<p>正規は正社員、非正規はパート・アルバイト・契約社員など、会社での雇用区分に沿って選択してください。固定給・時間給・スポット給などの給与形態だけで正規・非正規は決まりません。業務委託の方は従業員に含めず、契約内容を確認してください。</p>
 <div id="employee-rows"></div>
 <button id="add-employee" type="button">従業員を追加</button>
 <input type="hidden" name="employeesJson" id="employees-json">
