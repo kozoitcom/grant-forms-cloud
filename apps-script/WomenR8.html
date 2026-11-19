@@ -59,6 +59,9 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <div class="upload" data-condition="<?= document[2] ?>" data-upload-not-required="<?= documentSettings[document[0]]?.uploadNotRequired ? 'yes' : 'no' ?>" hidden>
 <label for="<?= document[0] ?>"><?= document[1] ?> <span class="req"><?= documentSettings[document[0]]?.uploadNotRequired ? '申請者のアップロード不要' : '必須' ?></span></label>
 <p id="<?= document[0] ?>-help"><?= document[3] ?></p>
+<? if (document[0] === 'rules') { ?>
+<p><a href="https://shugyo-kisoku-simple.agreeabledace.chatgpt.site/" target="_blank" rel="noopener noreferrer">就業規則作成サイト（別タブで開きます）</a></p>
+<? } ?>
 <input type="file" id="<?= document[0] ?>" name="<?= document[0] ?>" accept=".pdf,application/pdf" aria-describedby="<?= document[0] ?>-help" disabled>
 </div>
 <? }); ?>
