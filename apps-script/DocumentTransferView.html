@@ -1,0 +1,96 @@
+<p>②で保存した申請データを選び、①の様式・見本と組み合わせて転記用データを確定します。</p>
+<section><h2>AI転記・書類作成</h2>
+<p><strong>現在は転記用データの確認・保存まで利用できます。</strong> Word・Excel・PDFへの自動記入は未実装です。</p>
+<label for="transfer-grant">助成金</label><select id="transfer-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<label for="transfer-application">会社・保存済み申請データ</label><select id="transfer-application"><option value="">申請を選択してください</option></select>
+<button id="transfer-refresh" type="button">申請データを再読込</button>
+<p id="transfer-status" role="status"></p>
+<div id="transfer-preview" hidden><h3>転記元の申請データ</h3><dl id="transfer-values"></dl>
+<h3>様式・見本の登録状況</h3><ul id="transfer-templates"></ul>
+<p>確定時点の入力値と様式の参照先を保存します。以後の会社台帳や様式設定の変更で、この保存データが上書きされることはありません。</p>
+<button id="transfer-save" type="button">転記用データを確定して保存</button>
+</div></section>
+<section><h2>保存した転記用データ</h2><p>保存した内容を読み直して、この工程から再開できます。書類作成済みを示すものではありません。</p>
+<p id="transfer-history-status" role="status"></p><div id="transfer-history"></div></section>
+<script>
+const applicationSelect = document.getElementById('transfer-application');
+const status = document.getElementById('transfer-status');
+const preview = document.getElementById('transfer-preview');
+const saveButton = document.getElementById('transfer-save');
+let selectedReceipt = '';
+let previewRequest = 0;
+function renderTransfer(data, saved = false) {
+  const root = document.getElementById('transfer-values');
+  root.replaceChildren();
+  const labels = {company:'会社名',address:'事業所所在地',representative:'代表者の役職・氏名',representativeKana:'代表者のふりがな',industry:'業種',person:'担当者名',email:'メール',phone:'電話番号',note:'備考',location:'本店所在地条件',otherCity:'居住地と事業所地が異なるか'};
+  const values = {...data.application.values, employees:JSON.stringify(data.application.employees), genderCounts:JSON.stringify(data.application.genderCounts)};
+  const add = (label,value) => {
+    const title = document.createElement('dt'); title.textContent = label; title.style.fontWeight = '650';
+    const content = document.createElement('dd'); content.textContent = value || '未入力'; content.style.overflowWrap = 'anywhere';
+    root.append(title,content);
+  };
+  add('受付ID',data.application.receipt);
+  for (const [key,label] of Object.entries(labels)) add(label, values[key]);
+  for (const employee of data.application.employees || []) add('従業員', employee.name + ' ／ ' + employee.position + ' ／ ' + (employee.employment === 'regular' ? '正規' : '非正規'));
+  if (data.application.genderCounts) for (const group of data.application.genderCounts.groups || []) add(group.label, '男性' + group.male + '人・女性' + group.female + '人／計' + group.total + '人');
+  const templates = document.getElementById('transfer-templates'); templates.replaceChildren();
+  for (const template of data.templates) {
+    const item = document.createElement('li'); item.textContent = template.title + '：空欄様式 ' + (template.blank ? '登録済み' : '未登録') + '／記入済み見本 ' + (template.sample ? '登録済み' : '未登録');
+    templates.append(item);
+  }
+  preview.hidden = false;
+  saveButton.hidden = saved;
+  status.textContent = saved ? '保存時点の転記用データを表示しています。元の申請データは変更しません。' : '保存済みの申請データを読み込みました。';
+}
+function refreshApplications() {
+  ++previewRequest; selectedReceipt = ''; preview.hidden = true;
+  applicationSelect.replaceChildren(new Option('申請を選択してください',''));
+  status.textContent = '申請データを読み込み中…';
+  google.script.run.withSuccessHandler(items => {
+    for (const item of items.filter(item => item.grant === document.getElementById('transfer-grant').value)) applicationSelect.add(new Option(item.company + ' ／ ' + (item.submittedAt ? new Date(item.submittedAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}) : '') + ' ／ ' + item.receipt,item.receipt));
+    status.textContent = items.length ? '会社・申請データを選択してください。' : '保存済みの申請データはありません。②でデータを収集してください。';
+  }).withFailureHandler(error => { status.textContent = error.message; }).listCollectedApplications();
+}
+applicationSelect.addEventListener('change', () => {
+  const request = ++previewRequest;
+  selectedReceipt = applicationSelect.value; preview.hidden = true;
+  if (!selectedReceipt) { status.textContent = '申請を選択してください。'; return; }
+  status.textContent = '読み込み中…'; saveButton.disabled = false;
+  google.script.run.withSuccessHandler(data => { if (request === previewRequest) renderTransfer(data); }).withFailureHandler(error => { if (request === previewRequest) status.textContent = error.message; }).getTransferPreparation(selectedReceipt);
+});
+saveButton.addEventListener('click', () => {
+  if (!selectedReceipt) return;
+  saveButton.disabled = true; applicationSelect.disabled = true;
+  document.getElementById('transfer-refresh').disabled = true;
+  status.textContent = '確定データを保存中…';
+  google.script.run.withSuccessHandler(() => {
+    saveButton.disabled = false; applicationSelect.disabled = false;
+    document.getElementById('transfer-refresh').disabled = false;
+    status.textContent = '転記用データを保存しました。書類への自動記入は未実装です。'; refreshTransferHistory();
+  }).withFailureHandler(error => {
+    saveButton.disabled = false; applicationSelect.disabled = false;
+    document.getElementById('transfer-refresh').disabled = false;
+    status.textContent = error.message;
+  }).saveTransferPreparation(selectedReceipt);
+});
+function refreshTransferHistory() {
+  const historyStatus = document.getElementById('transfer-history-status');
+  google.script.run.withSuccessHandler(items => {
+    const root = document.getElementById('transfer-history'); root.replaceChildren();
+    historyStatus.textContent = items.length ? '' : '保存した転記用データはありません。';
+    for (const item of items) {
+      const line = document.createElement('p');
+      line.textContent = item.company + ' ／ ' + new Date(item.savedAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}) + ' ／ 転記準備済み ';
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = '保存内容を確認';
+      button.onclick = () => {
+        const request = ++previewRequest; selectedReceipt = ''; applicationSelect.value = ''; preview.hidden = true;
+        google.script.run.withSuccessHandler(data => { if (request === previewRequest) renderTransfer(data,true); }).withFailureHandler(error => { if (request === previewRequest) status.textContent = error.message; }).getSavedTransferPreparation(item.id);
+      };
+      line.append(button); root.append(line);
+    }
+  }).withFailureHandler(error => { historyStatus.textContent = error.message; }).listTransferPreparations();
+}
+document.getElementById('transfer-refresh').onclick = refreshApplications;
+document.getElementById('transfer-grant').onchange = refreshApplications;
+refreshApplications(); refreshTransferHistory();
+</script>

@@ -1,0 +1,147 @@
+<p>募集要項と書類の様式・見本を保存し、申請者に聞く項目を整理します。会社情報は②で管理します。</p>
+<section><h2>新しい助成金フォーム</h2>
+<form id="draft">
+<label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
+<label for="draft-year">年度</label><input id="draft-year" name="year" maxlength="32" placeholder="令和8年度" required>
+<label for="draft-pdf">募集要項PDF（20 MBまで）</label>
+<input id="draft-pdf" name="guidelines" type="file" accept=".pdf,application/pdf" required>
+<label for="draft-fields">入力項目案</label><textarea id="draft-fields" name="fields" maxlength="4000" placeholder="企業名、担当者名、対象事業所など"></textarea>
+<label for="draft-documents">提出書類案・必須条件</label><textarea id="draft-documents" name="documents" maxlength="4000" placeholder="登記事項証明書（法人のみ）など"></textarea>
+<button type="submit">募集要項と項目案を下書き保存</button>
+<p id="draft-status" role="status"></p>
+</form>
+<h3>保存済みの下書き</h3><ul id="drafts"></ul>
+</section>
+<section><h2>必要項目・様式・見本の設定</h2><label for="setup-grant">助成金フォーム</label><select id="setup-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select><details id="grant-requirements" open><summary>選択した助成金の必要項目</summary><div id="requirements-content" role="status"></div></details><div id="document-settings"></div><p id="document-settings-status" role="status"></p></section>
+<script>
+function loadDocumentSettings() {
+  const grant = document.getElementById('setup-grant').value;
+  const root = document.getElementById('document-settings');
+  const status = document.getElementById('document-settings-status');
+  root.textContent = '書類設定を読み込み中…';
+  google.script.run.withSuccessHandler(documents => {
+    if (document.getElementById('setup-grant').value !== grant) return;
+    root.replaceChildren();
+    for (const documentInfo of documents) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = documentInfo.title + (documentInfo.uploadNotRequired ? '（申請者アップロード不要）' : '');
+      details.append(summary);
+      const form = document.createElement('form');
+      for (const [name,value] of [['grant',grant],['documentKey',documentInfo.key]]) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden'; hidden.name = name; hidden.value = value;
+        form.append(hidden);
+      }
+      for (const [type,title] of [['blank','公式の空欄様式'],['sample','記入済み見本（管理者用）']]) {
+        const label = document.createElement('label');
+        label.textContent = title + '（PDF・docx・xlsx、20 MBまで）';
+        const file = document.createElement('input');
+        file.type = 'file'; file.name = type; file.accept = '.pdf,.docx,.xlsx';
+        label.append(file); form.append(label);
+        if (documentInfo[type]) {
+          const link = document.createElement('a');
+          link.href = documentInfo[type].url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          link.textContent = '登録済み：' + documentInfo[type].name;
+          form.append(link);
+        }
+      }
+      const label = document.createElement('label');
+      const check = document.createElement('input');
+      check.type = 'checkbox'; check.name = 'uploadNotRequired';
+      check.checked = Boolean(documentInfo.uploadNotRequired); check.style.width = 'auto';
+      label.append(check, ' 申請者のアップロード不要（添付欄をグレーアウト）');
+      form.append(label);
+      const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'この書類の設定を保存';
+      form.append(save);
+      form.addEventListener('submit', event => {
+        event.preventDefault(); save.disabled = true; status.textContent = '保存中…';
+        google.script.run.withSuccessHandler(() => {
+          status.textContent = '保存しました。'; loadDocumentSettings();
+        }).withFailureHandler(error => {
+          save.disabled = false; status.textContent = error.message;
+        }).saveGrantDocumentSettings(form);
+      });
+      details.append(form); root.append(details);
+    }
+  }).withFailureHandler(error => { root.textContent = error.message; }).listGrantDocumentSettings(grant);
+}
+
+const requirementsContent = document.getElementById('requirements-content');
+const grantSelector = document.getElementById('setup-grant');
+let requirementsRequest = 0;
+function showGrantRequirements() {
+  const request = ++requirementsRequest;
+  requirementsContent.textContent = '読み込み中…';
+  google.script.run.withSuccessHandler(result => {
+    if (request !== requirementsRequest) return;
+    requirementsContent.replaceChildren();
+    for (const [heading, values] of [['入力項目', result.fields]]) {
+      const title = document.createElement('h3');
+      title.textContent = heading;
+      const list = document.createElement('ul');
+      for (const item of values) {
+        const row = document.createElement('li');
+        row.textContent = item;
+        list.append(row);
+      }
+      requirementsContent.append(title, list);
+    }
+  }).withFailureHandler(error => {
+    if (request === requirementsRequest) requirementsContent.textContent = error.message;
+  }).getGrantRequirements(grantSelector.value);
+}
+grantSelector.addEventListener('change', showGrantRequirements);
+grantSelector.addEventListener('change', loadDocumentSettings);
+showGrantRequirements();
+loadDocumentSettings();
+const draft = document.getElementById('draft');
+const draftStatus = document.getElementById('draft-status');
+const draftList = document.getElementById('drafts');
+function refreshDrafts() {
+  google.script.run.withSuccessHandler(items => {
+    draftList.replaceChildren();
+    for (const item of items) {
+      const row = document.createElement('li');
+      const detail = document.createElement('details');
+      const title = document.createElement('summary');
+      title.textContent = item.year + ' ' + item.title;
+      detail.append(title);
+      const pdf = document.createElement('a');
+      pdf.href = item.url;
+      pdf.target = '_blank';
+      pdf.rel = 'noopener noreferrer';
+      pdf.textContent = '募集要項PDFを開く';
+      detail.append(pdf);
+      const notes = document.createElement('p');
+      notes.style.whiteSpace = 'pre-wrap';
+      notes.textContent = '入力項目案\n' + (item.fields || '未入力') + '\n\n提出書類案・必須条件\n' + (item.documents || '未入力');
+      detail.append(notes);
+      row.append(detail);
+      draftList.append(row);
+    }
+  }).withFailureHandler(error => { draftStatus.textContent = error.message; }).listGrantDrafts();
+}
+draft.addEventListener('submit', event => {
+  event.preventDefault();
+  const file = draft.elements.guidelines.files[0];
+  if (!file || !/\.pdf$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
+    draftStatus.textContent = '20 MB以内のPDFを選んでください。';
+    return;
+  }
+  const button = draft.querySelector('button');
+  button.disabled = true;
+  draftStatus.textContent = '保存中…';
+  google.script.run.withSuccessHandler(() => {
+    draft.reset();
+    button.disabled = false;
+    draftStatus.textContent = '下書きを保存しました。';
+    refreshDrafts();
+  }).withFailureHandler(error => {
+    button.disabled = false;
+    draftStatus.textContent = error.message;
+  }).saveGrantDraft(draft);
+});
+refreshDrafts();
+
+</script>
