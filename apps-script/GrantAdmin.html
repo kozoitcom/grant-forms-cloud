@@ -44,7 +44,7 @@
 </form></section>
 <section><h2>会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
-<details id="grant-requirements" open><summary>選択した助成金の必要項目・提出書類</summary><div id="requirements-content" role="status"></div></details>
+<details id="grant-requirements" open><summary>選択した助成金の必要項目</summary><div id="requirements-content" role="status"></div></details>
 <div id="document-settings"></div><p id="document-settings-status" role="status"></p>
 <label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
 <p id="prefill-preview" role="status"></p>
@@ -155,7 +155,7 @@ function showGrantRequirements() {
   google.script.run.withSuccessHandler(result => {
     if (request !== requirementsRequest) return;
     requirementsContent.replaceChildren();
-    for (const [heading, values] of [['入力項目', result.fields], ['提出書類', result.documents]]) {
+    for (const [heading, values] of [['入力項目', result.fields]]) {
       const title = document.createElement('h3');
       title.textContent = heading;
       const list = document.createElement('ul');
