@@ -12,7 +12,7 @@
 </form>
 <h3>保存済みの下書き</h3><ul id="drafts"></ul>
 </section>
-<section><h2>必要項目・様式・見本の設定</h2><label for="setup-grant">助成金フォーム</label><select id="setup-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select><details id="grant-requirements" open><summary>選択した助成金の必要項目</summary><div id="requirements-content" role="status"></div></details><div id="document-settings"></div><p id="document-settings-status" role="status"></p></section>
+<section><h2>様式・見本の設定</h2><label for="setup-grant">助成金フォーム</label><select id="setup-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select><div id="document-settings"></div><p id="document-settings-status" role="status"></p></section>
 <script>
 function loadDocumentSettings() {
   const grant = document.getElementById('setup-grant').value;
@@ -67,33 +67,7 @@ function loadDocumentSettings() {
   }).withFailureHandler(error => { root.textContent = error.message; }).listGrantDocumentSettings(grant);
 }
 
-const requirementsContent = document.getElementById('requirements-content');
-const grantSelector = document.getElementById('setup-grant');
-let requirementsRequest = 0;
-function showGrantRequirements() {
-  const request = ++requirementsRequest;
-  requirementsContent.textContent = '読み込み中…';
-  google.script.run.withSuccessHandler(result => {
-    if (request !== requirementsRequest) return;
-    requirementsContent.replaceChildren();
-    for (const [heading, values] of [['入力項目', result.fields]]) {
-      const title = document.createElement('h3');
-      title.textContent = heading;
-      const list = document.createElement('ul');
-      for (const item of values) {
-        const row = document.createElement('li');
-        row.textContent = item;
-        list.append(row);
-      }
-      requirementsContent.append(title, list);
-    }
-  }).withFailureHandler(error => {
-    if (request === requirementsRequest) requirementsContent.textContent = error.message;
-  }).getGrantRequirements(grantSelector.value);
-}
-grantSelector.addEventListener('change', showGrantRequirements);
-grantSelector.addEventListener('change', loadDocumentSettings);
-showGrantRequirements();
+document.getElementById('setup-grant').addEventListener('change', loadDocumentSettings);
 loadDocumentSettings();
 const draft = document.getElementById('draft');
 const draftStatus = document.getElementById('draft-status');
