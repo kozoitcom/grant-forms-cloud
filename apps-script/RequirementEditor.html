@@ -3,9 +3,9 @@
 <div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
 <label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
 <button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
-<label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をGoogle Gemini APIへ送信して解析することを確認しました</label>
-<button id="req-analyze" type="button" style="display:block;margin-top:20px">③ 未解析の資料から項目案を作成・追加</button>
-<p id="req-analysis" role="status"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p><button id="req-connection-test" type="button">AI接続テスト（資料は送信しません）</button>
+<label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をOpenAI APIへ送信してGPTで解析します。API利用料が発生する場合があることを確認しました</label>
+<button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
+<p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p><button id="req-connection-test" type="button">GPT接続テスト（資料は送信しません）</button>
 <p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は「使用する」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
 <h3 style="margin-top:24px">作成した項目の確認・編集</h3>
@@ -19,7 +19,14 @@
 <label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
 <label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
 <button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
-<p style="margin-top:24px;color:#526973">AI接続の設定：GASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定します。キーを画面・チャットへ貼り付けないでください。解析は1資料15 MBまでです。</p>
+<h3>GPT接続設定（管理者用）</h3>
+<p>管理画面からOpenAI APIへ接続して解析します。ChatGPTの月額契約とは別のAPI利用です。APIキーの登録や接続テストだけでは、資料を送信しません。Geminiには送信しません。</p>
+<p><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI APIキーを取得する</a></p>
+<label for="req-ai-key">OpenAI APIキー（登録済みのキーは表示しません。変更しない場合は空欄）</label><input id="req-ai-key" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="515">
+<label for="req-ai-model">GPTモデルID</label><input id="req-ai-model" value="gpt-6.1-terra" maxlength="85">
+<button id="req-ai-save" type="button">GPT接続設定を保存</button><p id="req-ai-settings-status" role="status"></p>
+<p>APIキーはチャットやGitHubには保存せず、GASのスクリプトプロパティへ保存します。保存後は入力欄から消去します。既存のGemini設定は使用しません。</p>
+<p>解析は1資料15 MBまで。図形・画像を含むWordやExcelは確認用PDFも登録してください。Excelのプルダウンや複雑な条件は必ず管理者が原本と照合してください。</p>
 </section>
 <script>
 (()=>{
@@ -59,19 +66,20 @@ $('req-analyze').onclick=()=>run(async()=>{
  try {
   const b=batches.find(x=>x.id===$('req-batch').value);
   if(!b)throw Error('①で解析する資料を選択してください。');
-  if(!$('req-consent').checked)throw Error('②のGoogle Gemini APIへの送信確認にチェックしてください。');
+  if(!$('req-consent').checked)throw Error('②のOpenAI API（GPT）への送信確認にチェックしてください。');
   $('req-analysis').textContent='AI接続設定を確認しています…';
   const connection=await rpc('getRequirementAiStatus');
-  if(!connection.configured)throw Error('AI接続が未設定のため、解析は開始していません。GASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定してください。キーはチャットに貼り付けないでください。');
+  if(!connection.configured)throw Error('GPT接続が未設定のため解析は開始していません。下の「GPT接続設定」でOpenAI APIキーを保存してください。GeminiのAPIキーは使えません。');
   if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
   for(let i=0;i<b.files.length;i++){
    const key=b.id+':'+i;if(analyzed.has(key))continue;
    const started=Date.now();
-   const progress=()=>{const seconds=Math.floor((Date.now()-started)/1000);$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件目：'+b.files[i].name+' を解析中（経過 '+seconds+'秒）'+(seconds>=120?'。Googleの応答を待っています。重ねて実行せず、この画面でお待ちください。':'');};
+   const progress=()=>{const seconds=Math.floor((Date.now()-started)/1000);$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件目：'+b.files[i].name+' を解析中（経過 '+seconds+'秒）'+(seconds>=120?'。GPTの応答を待っています。重ねて実行せず、この画面でお待ちください。':'');};
    progress();timer=setInterval(progress,1000);
-   const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true});
+   const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true,provider:'openai'});
    clearInterval(timer);timer=null;
    for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}
+   if(result.warnings?.length)$('req-ai-warnings').textContent += result.name+'：\n'+result.warnings.join('\n')+'\n';
    analyzed.add(key);renderCandidates();
   }
   $('req-analysis').textContent='選択資料の解析が完了しました。下の項目と候補を確認し、下書きを保存してください。';
@@ -85,9 +93,12 @@ $('req-connection-test').onclick=()=>run(async()=>{ $('req-analysis').textConten
 $('req-save').onclick=()=>run(async()=>{draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;status('下書き保存済み：第'+draft.revision+'版');});
 $('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
 $('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
-rpc('getRequirementAiStatus').then(r=>{$('req-analysis').textContent=r.configured?'AI接続設定あり。選択した資料を解析できます。':'AI接続は未設定です。項目の手動編集・保存・公開は利用できます。';}).catch(e=>status(e.message));
+function showGptSettings(r){$('req-ai-model').value=r.model||'gpt-6.1-terra';$('req-analysis').textContent=r.configured?'GPT接続設定あり。資料を選択して解析できます。':'GPT接続は未設定です。下の「GPT接続設定」でOpenAI APIキーを保存してください。';}
+$('req-ai-save').onclick=()=>run(async()=>{const input={key:$('req-ai-key').value,model:$('req-ai-model').value};$('req-ai-key').value='';$('req-ai-settings-status').textContent='保存中…';try{const result=await rpc('saveOpenAiRequirementSettings',input);showGptSettings(result);$('req-ai-settings-status').textContent='GPT接続設定を保存しました。接続テストを実行してください。';}catch(error){$('req-ai-settings-status').textContent=error.message;throw error;}});
+rpc('getRequirementAiStatus').then(showGptSettings).catch(e=>status(e.message));
 rpc('getGrantAiAuthorization').then(r=>{if(r.required){const link=$('req-auth-link');link.href=r.url;link.hidden=false;}}).catch(e=>status(e.message));
 refresh().catch(e=>status(e.message));
 })();
 </script>
+
 
