@@ -54,10 +54,33 @@ $('req-batches-refresh').onclick=()=>run(refresh);
 $('req-title').oninput=$('req-year').oninput=edited;
 $('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.id){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
 $('req-add').onclick=()=>add({id:freshId(),label:'追加項目',type:'text',options:[],required:false,enabled:true,help:'',source:'管理者が追加',target:'',condition:null});
-$('req-analyze').onclick=()=>run(async()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(!b)throw Error('解析する一括資料を選択してください。');if(!$('req-consent').checked)throw Error('Google Gemini APIへの送信確認にチェックしてください。');
- if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
- for(let i=0;i<b.files.length;i++){const key=b.id+':'+i;if(analyzed.has(key))continue;$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件を解析中…';const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true});for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}analyzed.add(key);renderCandidates();}
- $('req-analysis').textContent='選択資料の解析が完了しました。候補と全項目を確認してください。';});
+$('req-analyze').onclick=()=>run(async()=>{
+ let timer;
+ try {
+  const b=batches.find(x=>x.id===$('req-batch').value);
+  if(!b)throw Error('①で解析する資料を選択してください。');
+  if(!$('req-consent').checked)throw Error('②のGoogle Gemini APIへの送信確認にチェックしてください。');
+  $('req-analysis').textContent='AI接続設定を確認しています…';
+  const connection=await rpc('getRequirementAiStatus');
+  if(!connection.configured)throw Error('AI接続が未設定のため、解析は開始していません。GASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定してください。キーはチャットに貼り付けないでください。');
+  if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
+  for(let i=0;i<b.files.length;i++){
+   const key=b.id+':'+i;if(analyzed.has(key))continue;
+   const started=Date.now();
+   const progress=()=>{const seconds=Math.floor((Date.now()-started)/1000);$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件目：'+b.files[i].name+' を解析中（経過 '+seconds+'秒）'+(seconds>=120?'。Googleの応答を待っています。重ねて実行せず、この画面でお待ちください。':'');};
+   progress();timer=setInterval(progress,1000);
+   const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true});
+   clearInterval(timer);timer=null;
+   for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}
+   analyzed.add(key);renderCandidates();
+  }
+  $('req-analysis').textContent='選択資料の解析が完了しました。下の項目と候補を確認し、下書きを保存してください。';
+  status('解析が完了しました。項目を確認してから公開してください。');
+ }catch(error){
+  $('req-analysis').textContent='解析を停止しました：'+(error.message||'通信に失敗しました。')+' 完了済みの項目は画面に残っています。';
+  throw error;
+ }finally{if(timer)clearInterval(timer);}
+});
 $('req-save').onclick=()=>run(async()=>{draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;status('下書き保存済み：第'+draft.revision+'版');});
 $('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
 $('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
@@ -65,3 +88,4 @@ rpc('getRequirementAiStatus').then(r=>{$('req-analysis').textContent=r.configure
 refresh().catch(e=>status(e.message));
 })();
 </script>
+
