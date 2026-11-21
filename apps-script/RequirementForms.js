@@ -169,3 +169,10 @@ function authorizeGrantAiConnection(){
  if(code!==200)throw new Error('AI接続テスト：HTTP '+code+'。'+({400:'APIキーまたはモデルの設定を確認してください。',401:'APIキーの認証を確認してください。',403:'Gemini APIの利用権限を確認してください。',404:'このモデルを利用できません。モデル名を確認してください。',429:'利用枠の上限です。有料化せず利用枠を確認してください。'}[code]||'Google側の応答を確認してください。'));
  return {ok:true,message:'Google Gemini APIへの接続とモデルの存在を確認しました。資料の解析を再実行してください。'};
 }
+
+function getGrantAiAuthorization(){
+ requireGrantAdmin_();
+ const info=ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL,['https://www.googleapis.com/auth/script.external_request']);
+ const required=info.getAuthorizationStatus()===ScriptApp.AuthorizationStatus.REQUIRED;
+ return {required,url:required?info.getAuthorizationUrl():''};
+}
