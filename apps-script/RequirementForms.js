@@ -77,8 +77,15 @@ function requirementPage_(params){
   let invite=null,snapshot,values={};
   if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=readApplicantInvitationPrefill_(invite);if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);}
   else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt);}
-  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot,values,token:invite?params.invite:'',preview:!invite,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
+  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
   return p.evaluate().setTitle(snapshot.title+' | 申請フォーム').addMetaTag('viewport','width=device-width, initial-scale=1');
+}
+function requirementDisplaySnapshot_(snapshot){return {revision:snapshot.revision,title:snapshot.title,year:snapshot.year,fields:snapshot.fields.map(({source,target,...f})=>f)};}
+function getRequirementApplicantState(token){
+  const invite=readGrantInvitation_(String(token||''));if(!invite.grant.startsWith('schema:'))throw new Error('受付リンクが無効です。');
+  const values=readApplicantInvitationPrefill_(invite);
+  if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);
+  return {snapshot:requirementDisplaySnapshot_(resolveRequirementSnapshot_(invite)),values,token,preview:false,submitted:!!invite.receipt};
 }
 function requirementAnswers_(fields,raw){
   const out={},active=f=>f.enabled&&(!f.condition||String(raw[f.condition.field]??'')===f.condition.equals);

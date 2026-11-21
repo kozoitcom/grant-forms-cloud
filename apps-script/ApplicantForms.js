@@ -39,9 +39,9 @@ function applicantPrefill_(companyId, sourceReceipt) {
 function getApplicantFormPreview(input) {
   requireGrantAdmin_();
   if (input && String(input.grant).startsWith('schema:')) {
-    requirementRead_(input.grant.slice(7));
+    const definition = requirementRead_(input.grant.slice(7));
     applicantPrefill_(input.companyId,input.sourceReceipt);
-    return {url:ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec')+'?grant='+encodeURIComponent(input.grant)+'&preview=1'+(input.companyId?'&companyId='+encodeURIComponent(input.companyId):'')+(input.sourceReceipt?'&sourceReceipt='+encodeURIComponent(input.sourceReceipt):'')};
+    return {url:ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec')+'?grant='+encodeURIComponent(input.grant)+'&preview=1&v='+definition.revision+(input.companyId?'&companyId='+encodeURIComponent(input.companyId):'')+(input.sourceReceipt?'&sourceReceipt='+encodeURIComponent(input.sourceReceipt):'')};
   }
   if (!input || input.grant !== 'women-r8') throw new Error('助成金を選び直してください。');
   // Resolve both identifiers now. Never put company details or private ledger entries in the URL.
