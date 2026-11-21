@@ -1,6 +1,6 @@
 /** System 2: company ledger, collection, invitations and submitted records. */
 function submitWomenR8(form) {
-  if (!form || form.website) throw new Error('送信できませんでした。');
+  if (!form || form.website || form.previewMode === 'true') throw new Error('プレビューからは送信できません。');
   const industry = String(form.industry || '').trim();
   if (!industry || industry.length > 120) throw new Error('業種を入力してください。');
   const employees = validateWomenR8Employees_(form.employeesJson);
@@ -154,14 +154,14 @@ function createGrantInvitation(input) {
   const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
   const createdAt = Date.now();
   const invitation = {company, email, grant, createdAt, expiresAt: createdAt + 30 * 86400000};
-  if (record) {
-    invitation.companyId = record.id;
-    invitation.prefill = {...record.profile};
-    if (invitation.prefill.representativeKana) {
-      invitation.prefill.representativeKana = invitation.prefill.representativeKana.normalize('NFKC')
-        .replace(/[ァ-ヶヽヾ]/g, character => String.fromCharCode(character.charCodeAt(0) - 0x60));
-    }
-  }
+  const prefill = applicantPrefill_(companyId, input.sourceReceipt);
+  if (prefill.company && prefill.company !== company) throw new Error('事前入力元の会社と案内先の会社が一致しません。');
+  if (record) invitation.companyId = record.id;
+  prefill.company = company;
+  prefill.email = email;
+  if (Utilities.newBlob(JSON.stringify(prefill)).getBytes().length > 5000) {
+    invitation.prefillFileId = saveApplicantPrefill_(prefill);
+  } else invitation.prefill = prefill;
   writeGrantInvitation_(token, invitation);
   return {token, ...grantInvitationMessage_(token, invitation)};
 }

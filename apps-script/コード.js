@@ -12,7 +12,8 @@ function doGet(event) {
     const systems = [
       {id:'setup', title:'① 助成金・様式設定', file:'GrantSetupView'},
       {id:'applications', title:'② 申請データ・会社台帳', file:'ApplicantDataView'},
-      {id:'transfer', title:'③ AI転記・書類作成', file:'DocumentTransferView'}
+      {id:'transfer', title:'③ AI転記・書類作成', file:'DocumentTransferView'},
+      {id:'forms', title:'④ 申請者フォーム・リンク発行', file:'ApplicantFormsView'}
     ];
     const selected = systems.find(item => item.id === params.system) || systems[0];
     const page = HtmlService.createTemplateFromFile('GrantAdmin');
@@ -25,16 +26,12 @@ function doGet(event) {
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   if (event && event.parameter && event.parameter.grant === 'women-r8') {
-    const page = HtmlService.createTemplateFromFile('WomenR8');
-    page.documents = WOMEN_R8_DOCUMENTS;
-    page.documentSettings = getDocumentSettings_();
-    page.invitation = params.invite ? readGrantInvitation_(params.invite) : null;
-    if (!page.invitation) requireGrantAdmin_();
-    page.prefill = page.invitation?.prefill || {};
-    page.inviteToken = page.invitation ? params.invite : '';
-    return page.evaluate()
-      .setTitle('令和8年度 女性活躍情報公開促進奨励金 | 書類受付')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    const invitation = params.invite ? readGrantInvitation_(params.invite) : null;
+    if (!invitation) requireGrantAdmin_();
+    const previewMode = !invitation && params.preview === '1';
+    const prefill = invitation ? readApplicantInvitationPrefill_(invitation) :
+      previewMode ? applicantPrefill_(params.companyId, params.sourceReceipt) : {};
+    return buildApplicantPage_(invitation, prefill, invitation ? params.invite : '', previewMode);
   }
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('助成金申請 事前受付フォーム')

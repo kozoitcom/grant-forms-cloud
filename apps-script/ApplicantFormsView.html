@@ -1,0 +1,136 @@
+<p>①で設定した助成金の申請者フォームを確認し、②の会社台帳・保存済み申請データを事前入力に使って会社専用リンクを発行します。</p>
+<p>現在の対象は「令和8年度 女性活躍情報公開促進奨励金」です。①で保存した新しい助成金の下書きからの自動フォーム生成は準備中です。</p>
+<section><h2>申請者フォームの確認・会社向けリンクの発行</h2>
+<form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+
+
+<label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
+<label for="source-receipt">事前入力に使う保存済み申請（任意）</label><select id="source-receipt" name="sourceReceipt"><option value="">会社台帳のみ／新規入力</option></select>
+<p id="prefill-preview" role="status"></p>
+<label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
+<label for="email">案内メールの宛先</label><input id="email" name="email" type="email" maxlength="180" required>
+<button id="open-form-preview" type="button">申請者画面をプレビュー</button>
+<p><a id="applicant-preview-link" target="_blank" rel="noopener noreferrer" hidden>データを反映した申請者画面を開く</a></p>
+<button type="submit">専用リンクを発行</button></form>
+<div id="preview" hidden>
+<label for="link">会社専用リンク</label><input id="link" readonly>
+<label for="to">宛先</label><input id="to" readonly>
+<label for="subject">件名</label><input id="subject" readonly>
+<label for="message">本文</label><textarea id="message" readonly></textarea>
+<p><a id="issued-form-link" target="_blank" rel="noopener noreferrer">発行した会社専用フォームを開く</a></p>
+<button id="send" type="button">この内容でメール送信</button></div>
+<p id="notice" role="status"></p></section>
+<section><h2>申請者が入力する画面</h2><p>上の会社・申請データを選び「申請者画面をプレビュー」を押すと、実際と同じ入力画面をここに表示します。</p>
+<iframe id="applicant-inline-preview" title="申請者入力画面のプレビュー" sandbox="allow-scripts" style="width:100%;height:900px;border:1px solid #d7e3e5;border-radius:8px" hidden></iframe>
+</section>
+<script>
+const issue = document.getElementById('issue');
+const issueButton = issue.querySelector('button[type=submit]');
+const preview = document.getElementById('preview');
+const send = document.getElementById('send');
+const notice = document.getElementById('notice');
+let token;
+
+const companySelect = document.getElementById('issue-company');
+const sourceSelect = document.getElementById('source-receipt');
+const companyName = document.getElementById('company');
+let records = [], applications = [];
+let pendingSources = 2;
+function setIssueBusy(busy) {
+  issue.querySelectorAll('input,select,button').forEach(input => { input.disabled = busy; });
+}
+function sourceLoaded() {
+  if (--pendingSources === 0) { setIssueBusy(false); updateCompanyOptions(); }
+}
+let formRequest = 0;
+function clearIssuedLink() {
+  token = ''; preview.hidden = true; send.disabled = true;
+  document.getElementById('applicant-preview-link').hidden = true;
+  const frame = document.getElementById('applicant-inline-preview'); frame.hidden = true; frame.srcdoc = '';
+  ++formRequest;
+}
+function updateCompanyOptions() {
+  const record = records.find(item => item.id === companySelect.value);
+  const available = applications.filter(item => item.grant === document.getElementById('grant').value && (!record || item.company === record.name));
+  sourceSelect.replaceChildren(new Option('会社台帳のみ／新規入力',''));
+  for (const item of available) sourceSelect.add(new Option(item.company + ' ／ ' + (item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'}) : '') + ' ／ ' + item.receipt,item.receipt));
+  companyName.value = record ? record.name : '';
+  companyName.readOnly = Boolean(record);
+  companySelect.disabled = false;
+  updateSource();
+}
+function updateSource() {
+  const record = records.find(item => item.id === companySelect.value);
+  const source = applications.find(item => item.receipt === sourceSelect.value);
+  companyName.readOnly = Boolean(record || source);
+  companyName.value = source ? source.company : record ? record.name : companyName.value;
+  document.getElementById('prefill-preview').textContent = source ? '選択した申請の会社情報・従業員・男女別人数を事前入力します。添付書類は引き継ぎません。' : record ? '会社台帳の会社名・所在地・代表者・担当者・業種などを事前入力します。' : '新規会社向けの空欄フォームです。';
+  clearIssuedLink();
+}
+companySelect.addEventListener('change',updateCompanyOptions);
+sourceSelect.addEventListener('change',updateSource);
+document.getElementById('grant').addEventListener('change',updateCompanyOptions);
+companyName.addEventListener('input',clearIssuedLink);
+document.getElementById('email').addEventListener('input',clearIssuedLink);
+google.script.run.withSuccessHandler(items => {
+  records = items; companySelect.replaceChildren(new Option('新規会社',''));
+  for (const item of items) companySelect.add(new Option(item.name,item.id));
+  sourceLoaded();
+}).withFailureHandler(error => { notice.textContent = error.message; }).listCompanyNumbers();
+google.script.run.withSuccessHandler(items => { applications = items; sourceLoaded(); }).withFailureHandler(error => { notice.textContent = error.message; }).listCollectedApplications();
+document.getElementById('open-form-preview').addEventListener('click', () => {
+  const request = ++formRequest;
+  const button = document.getElementById('open-form-preview'); button.disabled = true;
+  notice.textContent = 'プレビューを準備中…';
+  google.script.run.withSuccessHandler(result => {
+    button.disabled = false;
+    if (request !== formRequest) return;
+    const link = document.getElementById('applicant-preview-link'); link.href = result.url; link.hidden = false;
+    const frame = document.getElementById('applicant-inline-preview'); frame.srcdoc = result.html; frame.hidden = false;
+    notice.textContent = '下に申請者の入力画面を表示しました。プレビューからの送信はできません。';
+  }).withFailureHandler(error => { button.disabled = false; if (request === formRequest) notice.textContent = error.message; }).getApplicantFormPreview({grant:document.getElementById('grant').value,companyId:companySelect.value,sourceReceipt:sourceSelect.value});
+});
+function showError(error) { notice.textContent = error.message || '処理できませんでした。'; }
+issue.addEventListener('submit', event => {
+  event.preventDefault();
+  const input = Object.fromEntries(new FormData(issue));
+  ++formRequest;
+  setIssueBusy(true);
+  preview.hidden = true;
+  notice.textContent = '発行中…';
+  google.script.run.withSuccessHandler(result => {
+    token = result.token;
+    for (const [id, value] of Object.entries({link:result.url,to:result.email,subject:result.subject,message:result.body})) {
+      document.getElementById(id).value = value;
+    }
+    document.getElementById('issued-form-link').href = result.url;
+    preview.hidden = false;
+    send.disabled = false;
+    const previewLink = document.getElementById('applicant-preview-link'); previewLink.hidden = true;
+    setIssueBusy(false);
+    notice.textContent = 'リンクを発行しました。宛先と本文をご確認ください。';
+
+  }).withFailureHandler(error => {
+    setIssueBusy(false);
+    showError(error);
+  }).createGrantInvitation(input);
+});
+send.addEventListener('click', () => {
+  if (!token) return;
+  send.disabled = true;
+  setIssueBusy(true);
+  notice.textContent = '送信中…';
+  google.script.run.withSuccessHandler(() => {
+    setIssueBusy(false);
+    notice.textContent = '案内メールを送信しました。';
+
+  }).withFailureHandler(error => {
+    setIssueBusy(false);
+    showError(error);
+
+  }).sendGrantInvitation(token);
+});
+
+
+setIssueBusy(true);
+</script>

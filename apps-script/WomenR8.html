@@ -20,18 +20,20 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <p>支給申請の書類受付フォームです。正式な申請はJグランツによる電子申請のみです（書面での申請はできません）。申請にはGビズIDプライムが必要です。事前に取得し、アカウント情報が最新であることをご確認ください。</p>
 </header>
 <? if (invitation) { ?><p>提出先の案内対象企業 <?= invitation.company ?></p><? } ?>
+<? if (previewMode) { ?><section aria-label="管理者プレビュー"><strong>管理者プレビュー</strong><p>申請者に表示される入力画面です。入力の確認はできますが、この画面から送信はできません。</p></section><? } ?>
 <form id="form">
+<input type="hidden" name="previewMode" value="<?= previewMode ? 'true' : 'false' ?>">
 <input type="hidden" name="inviteToken" value="<?= inviteToken ?>">
 <section><h2>事業者・担当者情報</h2>
 <div class="grid">
 <div><label for="entity">事業者区分 <span class="req">必須</span></label><select id="entity" name="entity" required><option value="">選択してください</option><option value="company">法人</option><option value="sole">個人事業主</option></select></div>
-<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= invitation ? invitation.company : '' ?>" <? if (invitation) { ?>readonly<? } ?> required></div>
+<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= prefill.company || (invitation ? invitation.company : '') ?>" <? if (invitation) { ?>readonly<? } ?> required></div>
 <div><label for="industry">業種 <span class="req">必須</span></label><input id="industry" name="industry" value="<?= prefill.industry || '' ?>" maxlength="120" placeholder="例：情報通信業、運輸業、小売業" required></div>
 <div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" value="<?= prefill.address || '' ?>" maxlength="250" required></div>
 <div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" value="<?= prefill.representative || '' ?>" maxlength="120" required></div>
 <div><label for="representativeKana">代表者のふりがな（ひらがな）</label><input id="representativeKana" name="representativeKana" value="<?= prefill.representativeKana || '' ?>" maxlength="120"></div>
 <div><label for="person">担当者名 <span class="req">必須</span></label><input id="person" name="person" value="<?= prefill.person || '' ?>" autocomplete="name" maxlength="80" required></div>
-<div><label for="email">メールアドレス <span class="req">必須</span></label><input id="email" name="email" type="email" autocomplete="email" maxlength="180" required></div>
+<div><label for="email">メールアドレス <span class="req">必須</span></label><input id="email" name="email" value="<?= invitation ? invitation.email : (prefill.email || '') ?>" type="email" autocomplete="email" maxlength="180" required></div>
 <div><label for="phone">電話番号</label><input id="phone" name="phone" value="<?= prefill.phone || '' ?>" type="tel" autocomplete="tel" maxlength="40"></div>
 <div class="wide" data-condition="company" hidden><label for="location">登記上の本店が都外、または本社機能を持つ事業所と所在地が異なりますか？ <span class="req">必須</span></label><select id="location" name="location" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
 <div class="wide" data-condition="sole" hidden><label for="otherCity">居住地と事業所地が異なりますか？ <span class="req">必須</span></label><select id="otherCity" name="otherCity" disabled><option value="">選択してください</option><option value="yes">はい</option><option value="no">いいえ</option></select></div>
@@ -71,12 +73,14 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <button type="submit">書類を送信</button>
 <div id="status" role="status"></div>
 </form></main>
+<script id="initial-form-data" type="application/json"><?!= initialFormJson ?></script>
 <script>
+const initialForm = JSON.parse(document.getElementById('initial-form-data').textContent);
 const form = document.getElementById('form');
-const button = form.querySelector('button');
+const button = form.querySelector('button[type=submit]');
 const status = document.getElementById('status');
 const employeeRows = document.getElementById('employee-rows');
-function addEmployee() {
+function addEmployee(employee = {}) {
   const row = document.createElement('fieldset');
   row.style.marginBottom = '14px';
   const legend = document.createElement('legend');
@@ -88,6 +92,7 @@ function addEmployee() {
     input.dataset.employee = key;
     input.maxLength = max;
     input.required = true;
+    input.value = employee[key] || '';
     wrapper.append(input);
     row.append(wrapper);
   }
@@ -99,6 +104,7 @@ function addEmployee() {
   for (const [value, text] of [['','選択してください'],['regular','正規（正社員）'],['nonregular','非正規（パート・アルバイト・契約社員など）']]) {
     select.add(new Option(text, value));
   }
+  select.value = employee.employment || '';
   label.append(select);
   row.append(label);
   const remove = document.createElement('button');
@@ -114,8 +120,13 @@ function renumberEmployees() {
     row.querySelector('legend').textContent = '従業員 ' + (index + 1);
   });
 }
-document.getElementById('add-employee').addEventListener('click', addEmployee);
-addEmployee();
+document.getElementById('add-employee').addEventListener('click', () => addEmployee());
+for (const employee of initialForm.values.employees || [{}]) addEmployee(employee);
+if (!employeeRows.children.length) addEmployee();
+for (const [key,value] of Object.entries(initialForm.values)) {
+  const input = form.elements.namedItem(key);
+  if (input && input.type !== 'file' && input.type !== 'hidden' && key !== 'inviteToken' && key !== 'previewMode') input.value = String(value ?? '');
+}
 function updateGenderCounts() {
   let complete = true;
   let eligible = false;
@@ -155,6 +166,7 @@ function updateDocuments() {
 form.addEventListener('change', updateDocuments);
 form.addEventListener('submit', event => {
   event.preventDefault();
+  if (initialForm.preview) { status.textContent = 'プレビューからは送信できません。'; return; }
   const files = [...form.querySelectorAll('input[type=file]:enabled')].flatMap(input => [...input.files]);
   if (files.some(file => !/\.pdf$/i.test(file.name)) || files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) {
     status.textContent = 'PDFのみ、合計20 MB以内で添付してください。';
@@ -180,4 +192,5 @@ form.addEventListener('submit', event => {
   }).submitWomenR8(form);
 });
 updateDocuments();
+if (initialForm.preview) { button.disabled = true; button.textContent = 'プレビューのため送信できません'; }
 </script></body></html>

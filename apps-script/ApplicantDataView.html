@@ -1,4 +1,4 @@
-<p>会社台帳・申請者への案内・入力データ・提出書類を管理します。保存した申請データを③で利用します。</p>
+<p>会社台帳・入力データ・提出書類・案内履歴を管理します。フォーム確認とリンク発行は④から行います。保存した申請データを③で利用します。</p>
 <section><h2>会社台帳一覧</h2>
 <label for="ledger-search">会社名で検索</label><input id="ledger-search" type="search" placeholder="会社名を入力">
 <p id="ledger-status" role="status"></p><div id="ledger-list"></div>
@@ -19,22 +19,8 @@
 <button type="submit">会社情報を保存</button>
 <p id="number-status" role="status"></p>
 </form></section>
-<section><h2>会社向けリンクの発行</h2>
-<form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
 
-
-<label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
-<p id="prefill-preview" role="status"></p>
-<label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
-<label for="email">案内メールの宛先</label><input id="email" name="email" type="email" maxlength="180" required>
-<button type="submit">専用リンクを発行</button></form>
-<div id="preview" hidden>
-<label for="link">会社専用リンク</label><input id="link" readonly>
-<label for="to">宛先</label><input id="to" readonly>
-<label for="subject">件名</label><input id="subject" readonly>
-<label for="message">本文</label><textarea id="message" readonly></textarea>
-<button id="send" type="button">この内容でメール送信</button></div>
-<p id="notice" role="status"></p></section>
+<p id="notice" role="status"></p>
 <section id="history"><h2>案内・提出履歴</h2>
 <label><input id="show-deleted" type="checkbox" style="width:auto"> 削除した履歴を表示</label>
 <table><thead><tr><th>操作</th><th>会社</th><th>助成金</th><th>宛先</th><th>送信日時</th><th>提出状況</th><th>女性割合の確認</th></tr></thead><tbody id="rows"></tbody></table>
@@ -70,14 +56,9 @@ storageForm.addEventListener('submit', event => {
     button.disabled = false; storageStatus.textContent = error.message;
   }).saveSubmissionStorageSettings(document.getElementById('storage-folder').value);
 });
-const issue = document.getElementById('issue');
-const issueButton = issue.querySelector('button');
-const preview = document.getElementById('preview');
-const send = document.getElementById('send');
 const notice = document.getElementById('notice');
 const rows = document.getElementById('rows');
 const empty = document.getElementById('empty');
-let token;
 const companyData = document.getElementById('company-data');
 const companyRecords = document.getElementById('company-records');
 const recordName = document.getElementById('record-name');
@@ -85,20 +66,6 @@ const numberRows = document.getElementById('number-rows');
 const numberStatus = document.getElementById('number-status');
 let numberRecords = [];
 let ledgerHistory = [];
-const issueCompany = document.getElementById('issue-company');
-const issueName = document.getElementById('company');
-function updateIssueCompany() {
-  const record = numberRecords.find(item => item.id === issueCompany.value);
-  issueName.readOnly = Boolean(record);
-  if (record) issueName.value = record.name;
-  const labels = {"industry":["業種",120],"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]};
-  const selected = record ? Object.keys(labels).filter(key => record.profile?.[key]).map(key => labels[key][0]) : [];
-  document.getElementById('prefill-preview').textContent = record ? '事前入力：会社名' + (selected.length ? '、' + selected.join('、') : '') : '';
-}
-issueCompany.addEventListener('change', () => {
-  issueName.value = '';
-  updateIssueCompany();
-});
 function addNumberRow(label = '', value = '') {
   const row = document.createElement('fieldset');
   row.innerHTML = '<label>項目名<input data-label maxlength="80"></label>' +
@@ -136,11 +103,6 @@ function refreshNumbers(selected = '') {
   google.script.run.withSuccessHandler(records => {
     numberRecords = records;
     renderCompanyLedger();
-    const current = issueCompany.value;
-    issueCompany.replaceChildren(new Option('新規会社', ''));
-    records.forEach(record => issueCompany.add(new Option(record.name, record.id)));
-    issueCompany.value = current;
-    updateIssueCompany();
     companyRecords.replaceChildren(new Option('新規登録', ''));
     records.forEach(record => companyRecords.add(new Option(record.name, record.id)));
     companyRecords.value = selected;
@@ -221,7 +183,7 @@ function renderCompanyLedger() {
     }
     for (const item of history) {
       const line = document.createElement('p');
-      const title = document.getElementById('grant').querySelector('option[value="' + item.grant + '"]')?.textContent || item.grant;
+      const title = (item.grant === 'women-r8' ? '令和8年度 女性活躍情報公開促進奨励金' : item.grant);
       line.textContent = title + ' ／ ' + (item.deletedAt ? '削除済み' : item.receipt ? '提出済み' : '未提出');
       if (item.receipt && item.folderUrl) {
         const link = document.createElement('a');
@@ -267,7 +229,7 @@ function refresh() {
         }).setGrantHistoryDeleted(item.historyId, !item.deletedAt);
       };
       action.append(remove);
-      const grantName = document.getElementById('grant').querySelector('option[value="' + item.grant + '"]')?.textContent || item.grant;
+      const grantName = (item.grant === 'women-r8' ? '令和8年度 女性活躍情報公開促進奨励金' : item.grant);
       const sent = item.sentAt ? new Date(item.sentAt).toLocaleString('ja-JP', {timeZone:'Asia/Tokyo'}) :
         item.sending ? '送信結果を要確認' : '未送信';
       for (const value of [item.company, grantName, item.email, sent]) row.insertCell().textContent = value;
@@ -296,41 +258,5 @@ function refresh() {
     }
   }).withFailureHandler(error => { empty.textContent = error.message; }).listGrantInvitations();
 }
-issue.addEventListener('submit', event => {
-  event.preventDefault();
-  issueButton.disabled = true;
-  preview.hidden = true;
-  notice.textContent = '発行中…';
-  google.script.run.withSuccessHandler(result => {
-    token = result.token;
-    for (const [id, value] of Object.entries({link:result.url,to:result.email,subject:result.subject,message:result.body})) {
-      document.getElementById(id).value = value;
-    }
-    preview.hidden = false;
-    send.disabled = false;
-    issueButton.disabled = false;
-    notice.textContent = 'リンクを発行しました。宛先と本文をご確認ください。';
-    refresh();
-  }).withFailureHandler(error => {
-    issueButton.disabled = false;
-    showError(error);
-  }).createGrantInvitation(Object.fromEntries(new FormData(issue)));
-});
-send.addEventListener('click', () => {
-  if (!token) return;
-  send.disabled = true;
-  issueButton.disabled = true;
-  notice.textContent = '送信中…';
-  google.script.run.withSuccessHandler(() => {
-    issueButton.disabled = false;
-    notice.textContent = '案内メールを送信しました。';
-    refresh();
-  }).withFailureHandler(error => {
-    issueButton.disabled = false;
-    showError(error);
-    refresh();
-  }).sendGrantInvitation(token);
-});
 refresh();
-
 </script>
