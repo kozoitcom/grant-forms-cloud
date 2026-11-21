@@ -154,7 +154,7 @@ function analyzeRequirementMaterial(input){
 /** Returns a safe diagnosis without echoing credentials or provider response bodies. */
 function requirementAiFailure_(error){
  const message=String(error?.message||error||'');
- if(/script.external_request|permission|authorization|権限|承認|許可/i.test(message))return 'Google Apps Scriptの外部通信の権限承認が必要です。GAS編集画面で authorizeGrantAiConnection を実行し、表示される権限を確認・承認してください。';
+ if(/script.external_request|permission|authorization|権限|承認|許可/i.test(message)){const key=PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY')||'';const safe=(key?message.split(key).join('[非表示]'):message).replace(/AIza[\\w-]+|AQ\\.[\\w.-]+/g,'[非表示]').slice(0,350);return '外部通信の権限エラー：'+safe;}
  return 'Google Gemini APIへの通信に失敗しました。AI接続テストで確認してください。';
 }
 function authorizeGrantAiConnection(){
