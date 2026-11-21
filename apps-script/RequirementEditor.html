@@ -1,11 +1,17 @@
-<section><h2>必要項目の作成・編集・公開</h2>
-<p>資料から作った案を確認し、使用する項目だけを公開します。公開済みの会社リンクは、選択した反映先に応じて更新されます。提出済みの回答と当時の項目は保持します。</p>
-<label>保存済みの項目定義<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">読み込み</button>
+<section><h2>資料から必要項目を作成</h2>
+<p>登録した資料を選び、送信確認にチェックして、項目作成ボタンを押してください。</p>
+<div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
+<label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
+<button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
+<label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をGoogle Gemini APIへ送信して解析することを確認しました</label>
+<button id="req-analyze" type="button" style="display:block;margin-top:20px">③ 未解析の資料から項目案を作成・追加</button>
+<p id="req-analysis" role="status"></p>
+<p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は「使用する」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
+</div>
+<h3 style="margin-top:24px">作成した項目の確認・編集</h3>
+<p>新しく作る場合は、上の①②③から始めてください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
+<label>保存済みの下書き<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">選択した下書きを読み込む</button>
 <label>助成金名<input id="req-title" maxlength="180"></label><label>年度<input id="req-year" maxlength="32"></label>
-<label>一括登録した資料<select id="req-batch"><option value="">資料を選択</option></select></label><button type="button" id="req-batches-refresh">資料一覧を更新</button>
-<p>AI解析はGoogle Gemini API接続が必要です。管理者がGASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定します。キーは画面・チャットへ貼り付けないでください。解析は1件15 MBまで、各資料を順番に解析します。</p>
-<label><input id="req-consent" type="checkbox" style="width:auto"> 選択した資料をGoogle Gemini APIへ送信して解析する</label>
-<button id="req-analyze" type="button">未解析の資料から項目案を作成・追加</button><p id="req-analysis" role="status"></p>
 <p>同じID・同じ項目名は候補として表示します。「統合」で根拠・転記先をまとめるか、「別項目として追加」を選んでください。AIの解析だけで公開せず、全資料と照合してください。</p><div id="req-candidates"></div>
 <div id="req-fields"></div><button id="req-add" type="button">項目を追加</button><button id="req-save" type="button">下書きを保存</button>
 <h3>申請者画面の確認</h3><button id="req-preview" type="button">保存済みの下書きをプレビュー</button><a id="req-preview-link" target="_blank" rel="noopener noreferrer" hidden>申請者画面を開く</a>
@@ -13,6 +19,7 @@
 <label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
 <label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
 <button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
+<p style="margin-top:24px;color:#526973">AI接続の設定：GASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定します。キーを画面・チャットへ貼り付けないでください。解析は1資料15 MBまでです。</p>
 </section>
 <script>
 (()=>{
@@ -45,7 +52,7 @@ async function run(fn){if(busy)return;busy=true;document.querySelectorAll('#req-
 $('req-load').onclick=()=>run(async()=>{if(dirty&&!confirm('未保存の変更を破棄して読み込みますか？'))return;draft=$('req-def').value?await rpc('getRequirementForm',$('req-def').value):{id:'',revision:0,title:'',year:'',fields:[],batchIds:[]};$('req-title').value=draft.title;$('req-year').value=draft.year;candidates=[];analyzed.clear();dirty=false;render();renderCandidates();await refresh();status('読み込みました。');});
 $('req-batches-refresh').onclick=()=>run(refresh);
 $('req-title').oninput=$('req-year').oninput=edited;
-$('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.title){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
+$('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.id){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
 $('req-add').onclick=()=>add({id:freshId(),label:'追加項目',type:'text',options:[],required:false,enabled:true,help:'',source:'管理者が追加',target:'',condition:null});
 $('req-analyze').onclick=()=>run(async()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(!b)throw Error('解析する一括資料を選択してください。');if(!$('req-consent').checked)throw Error('Google Gemini APIへの送信確認にチェックしてください。');
  if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
