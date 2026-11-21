@@ -85,7 +85,10 @@ function getGrantRequirements(grant) {
 }
 
 function getDocumentSettings_() {
-  const raw = PropertiesService.getScriptProperties().getProperty('WOMEN_R8_DOCUMENT_SETTINGS');
+  const props = PropertiesService.getScriptProperties();
+  const fileId = props.getProperty('WOMEN_R8_DOCUMENT_SETTINGS_FILE_ID');
+  if (fileId) return JSON.parse(DriveApp.getFileById(fileId).getBlob().getDataAsString('UTF-8'));
+  const raw = props.getProperty('WOMEN_R8_DOCUMENT_SETTINGS');
   return raw ? JSON.parse(raw) : {};
 }
 
@@ -135,7 +138,7 @@ function saveGrantDocumentSettings(form) {
     }
     entry.uploadNotRequired = form.uploadNotRequired === 'on' || form.uploadNotRequired === 'true';
     settings[key] = entry;
-    props.setProperty('WOMEN_R8_DOCUMENT_SETTINGS', JSON.stringify(settings));
+    writeDocumentSettings_(settings);
     return true;
   } catch (error) {
     created.forEach(file => { try { file.setTrashed(true); } catch (_) {} });
@@ -145,3 +148,19 @@ function saveGrantDocumentSettings(form) {
   }
 }
 
+
+/** Keep legacy property reads compatible while supporting larger sets of templates. Caller holds the script lock. */
+function writeDocumentSettings_(settings) {
+  const props = PropertiesService.getScriptProperties();
+  const json = JSON.stringify(settings);
+  const fileId = props.getProperty('WOMEN_R8_DOCUMENT_SETTINGS_FILE_ID');
+  if (fileId) { DriveApp.getFileById(fileId).setContent(json); return; }
+  if (Utilities.newBlob(json).getBytes().length <= 8000) {
+    props.setProperty('WOMEN_R8_DOCUMENT_SETTINGS',json);return;
+  }
+  const folderId = props.getProperty('GRANT_DOCUMENT_TEMPLATE_FOLDER');
+  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.createFolder('Grant Forms Cloud - 公式様式・管理者用見本');
+  if (!folderId) props.setProperty('GRANT_DOCUMENT_TEMPLATE_FOLDER',folder.getId());
+  const file = folder.createFile('_document-settings.json',json,MimeType.PLAIN_TEXT);
+  props.setProperty('WOMEN_R8_DOCUMENT_SETTINGS_FILE_ID',file.getId());
+}

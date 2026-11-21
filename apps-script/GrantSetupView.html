@@ -1,15 +1,26 @@
 <p>募集要項と書類の様式・見本を保存し、申請者に聞く項目を整理します。会社情報は②で管理します。</p>
-<section><h2>新しい助成金フォーム</h2>
-<form id="draft">
-<label for="draft-title">助成金名</label><input id="draft-title" name="title" maxlength="180" required>
-<label for="draft-year">年度</label><input id="draft-year" name="year" maxlength="32" placeholder="令和8年度" required>
-<label for="draft-pdf">募集要項PDF（20 MBまで）</label>
-<input id="draft-pdf" name="guidelines" type="file" accept=".pdf,application/pdf" required>
-<button type="submit">募集要項を下書き保存</button>
-<p id="draft-status" role="status"></p>
-</form>
-<h3>保存済みの下書き</h3><ul id="drafts"></ul>
-</section>
+<section><h2>助成金資料の一括アップロード</h2>
+<form id="material-batch-form">
+<label for="material-grant">登録先</label><select id="material-grant"><option value="">新規助成金の資料として保存</option><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<label for="material-title">助成金名</label><input id="material-title" maxlength="180" required>
+<label for="material-year">年度</label><input id="material-year" maxlength="32" placeholder="令和8年度" required>
+<div id="material-dropzone" style="margin:18px 0;padding:30px 18px;border:2px dashed #136960;border-radius:12px;background:#f3f9f8;text-align:center">
+<p><strong>募集要項・空欄様式・記入済み見本を、まとめてここへドロップ</strong></p>
+<label for="material-files">またはファイルを選択（複数選択できます）</label>
+<input id="material-files" type="file" multiple accept=".pdf,.docx,.xlsx" aria-describedby="material-limits">
+<p id="material-limits">PDF・Word（docx）・Excel（xlsx）。1ファイル20 MB、1回30ファイル・合計50 MBまで。追加でドロップできます。</p>
+</div>
+<p>種類の初期候補はファイル名から付けています。各ファイルの種類・対応する書類を確認してください。AIによる内容解析・必要項目の自動生成は未実装です。</p>
+<p>空欄様式と見本は片方だけでも保存できます。既存助成金の書類に紐づけると「様式・見本の設定」にも反映します。登録済みの同種ファイルは差し替わりますが、元のファイルは削除しません。「その他」の資料は一括登録フォルダに保存します。</p>
+<p id="material-selection-status" role="status"></p>
+<div style="overflow:auto"><table><thead><tr><th>ファイル</th><th>サイズ</th><th>種類</th><th>対応する書類</th><th>操作</th></tr></thead><tbody id="material-queue"></tbody></table></div>
+<button id="material-save" type="submit" disabled>確認した資料をまとめて保存</button>
+<button id="material-clear" type="button">選択をクリア</button>
+<p id="material-upload-status" role="status" style="white-space:pre-wrap"></p>
+</form></section>
+<section><h2>一括登録した資料</h2><button id="material-refresh" type="button">一覧を更新</button><p id="material-history-status" role="status"></p><div id="material-history"></div></section>
+
+<section><h2>以前に保存した募集要項</h2><p id="draft-status" role="status"></p><ul id="drafts"></ul></section>
 <section><h2>様式・見本の設定</h2><label for="setup-grant">助成金フォーム</label><select id="setup-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select><div id="document-settings"></div><p id="document-settings-status" role="status"></p></section>
 <script>
 function loadDocumentSettings() {
@@ -69,7 +80,6 @@ function loadDocumentSettings() {
 
 document.getElementById('setup-grant').addEventListener('change', loadDocumentSettings);
 loadDocumentSettings();
-const draft = document.getElementById('draft');
 const draftStatus = document.getElementById('draft-status');
 const draftList = document.getElementById('drafts');
 function refreshDrafts() {
@@ -92,26 +102,149 @@ function refreshDrafts() {
     }
   }).withFailureHandler(error => { draftStatus.textContent = error.message; }).listGrantDrafts();
 }
-draft.addEventListener('submit', event => {
-  event.preventDefault();
-  const file = draft.elements.guidelines.files[0];
-  if (!file || !/\.pdf$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
-    draftStatus.textContent = '20 MB以内のPDFを選んでください。';
-    return;
-  }
-  const button = draft.querySelector('button');
-  button.disabled = true;
-  draftStatus.textContent = '保存中…';
-  google.script.run.withSuccessHandler(() => {
-    draft.reset();
-    button.disabled = false;
-    draftStatus.textContent = '下書きを保存しました。';
-    refreshDrafts();
-  }).withFailureHandler(error => {
-    button.disabled = false;
-    draftStatus.textContent = error.message;
-  }).saveGrantDraft(draft);
-});
+
 refreshDrafts();
+
+const materialForm = document.getElementById('material-batch-form');
+const materialQueueRoot = document.getElementById('material-queue');
+const materialDropzone = document.getElementById('material-dropzone');
+const materialInput = document.getElementById('material-files');
+const materialStatus = document.getElementById('material-upload-status');
+const materialGrant = document.getElementById('material-grant');
+const materialTitle = document.getElementById('material-title');
+const materialYear = document.getElementById('material-year');
+const materialSave = document.getElementById('material-save');
+let materialQueue = [], materialCatalog = null, materialBusy = false, materialRequestId = '', materialBatchStarted = false;
+function materialRpc(name,...args) {
+  return new Promise((resolve,reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args));
+}
+function materialChanged() { materialRequestId = ''; materialBatchStarted = false; }
+function suggestMaterial(file) {
+  const name = file.name.normalize('NFKC').toLowerCase();
+  const role = /募集|要項|手引き|guideline/.test(name) && /\.pdf$/i.test(name) ? 'guidelines' :
+    /記入例|記入済|見本|サンプル|sample/.test(name) ? 'sample' : /空欄|様式|blank/.test(name) ? 'blank' : '';
+  const matches = (materialCatalog?.documents || []).filter(item => name.includes(item.title.split('（')[0].normalize('NFKC').toLowerCase()));
+  return {file,role,documentKey:materialGrant.value ? matches.length === 1 ? matches[0].key : '' : '__other',
+    documentTitle:file.name.replace(/\.(pdf|docx|xlsx)$/i,'')};
+}
+function addMaterialFiles(files) {
+  if (materialBusy || materialBatchStarted) { materialStatus.textContent = '処理中の登録を完了するか、「選択をクリア」で新しい登録を開始してください。';return; }
+  const rejected = [], added = [];
+  let total = materialQueue.reduce((sum,item)=>sum + item.file.size,0);
+  for (const file of files) {
+    if (!/\.(pdf|docx|xlsx)$/i.test(file.name) || file.size <= 0 || file.size > 20*1024*1024) { rejected.push(file.name + '：対象形式・サイズを確認してください。');continue; }
+    if ([...materialQueue,...added].some(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) {rejected.push(file.name + '：選択済みです。');continue;}
+    if (materialQueue.length + added.length >= 30 || total + file.size > 50*1024*1024) { rejected.push(file.name + '：30件・合計50 MBの上限を超えます。');continue; }
+    total += file.size;added.push(suggestMaterial(file));
+  }
+  materialQueue.push(...added);materialChanged();renderMaterialQueue();
+  materialStatus.textContent = rejected.join('\n');
+}
+function renderMaterialQueue() {
+  materialQueueRoot.replaceChildren();
+  const total = materialQueue.reduce((sum,item)=>sum+item.file.size,0);
+  document.getElementById('material-selection-status').textContent = materialQueue.length + '件 ／ 合計' + (total/1024/1024).toFixed(2) + ' MB';
+  materialSave.disabled = !materialQueue.length || !materialCatalog || materialBusy;
+  materialQueue.forEach((item,index) => {
+    const row = materialQueueRoot.insertRow();row.insertCell().textContent = item.file.name;
+    row.insertCell().textContent = (item.file.size/1024/1024).toFixed(2) + ' MB';
+    const role = document.createElement('select');role.setAttribute('aria-label',item.file.name + 'の種類');
+    for (const [value,label] of [['','要確認・選択してください'],['guidelines','募集要項（PDF）'],['blank','公式の空欄様式'],['sample','記入済み見本']]) role.add(new Option(label,value));
+    role.value = item.role;role.disabled = materialBusy || materialBatchStarted;
+    role.onchange = () => {item.role=role.value;materialChanged();renderMaterialQueue();};row.insertCell().append(role);
+    const cell = row.insertCell();
+    if (item.role === 'guidelines') cell.textContent = '募集要項';
+    else {
+      if (materialGrant.value) {
+        const documentSelect = document.createElement('select');documentSelect.setAttribute('aria-label',item.file.name+'に対応する書類');
+        documentSelect.add(new Option('選択してください',''));
+        for (const document of materialCatalog?.documents || []) documentSelect.add(new Option(document.title,document.key));
+        documentSelect.add(new Option('その他（書類名を入力）','__other'));documentSelect.value=item.documentKey;
+        documentSelect.disabled=materialBusy || materialBatchStarted;
+        documentSelect.onchange=()=>{item.documentKey=documentSelect.value;materialChanged();renderMaterialQueue();};cell.append(documentSelect);
+      }
+      if (!materialGrant.value || item.documentKey === '__other') {
+        const title = document.createElement('input');title.maxLength=180;title.value=item.documentTitle;title.setAttribute('aria-label',item.file.name+'の書類名');
+        title.disabled=materialBusy || materialBatchStarted;title.oninput=()=>{item.documentTitle=title.value;materialChanged();};cell.append(title);
+      }
+    }
+    const remove=document.createElement('button');remove.type='button';remove.textContent='外す';remove.setAttribute('aria-label',item.file.name+'を選択から外す');remove.disabled=materialBusy || materialBatchStarted;
+    remove.onclick=()=>{materialQueue.splice(index,1);materialChanged();renderMaterialQueue();};row.insertCell().append(remove);
+  });
+}
+materialInput.addEventListener('change',()=>{addMaterialFiles([...materialInput.files]);materialInput.value='';});
+for (const name of ['dragenter','dragover']) materialDropzone.addEventListener(name,event=>{event.preventDefault();materialDropzone.style.background='#dcefe9';});
+for (const name of ['dragleave','drop']) materialDropzone.addEventListener(name,event=>{event.preventDefault();materialDropzone.style.background='#f3f9f8';});
+materialDropzone.addEventListener('drop',event=>addMaterialFiles([...event.dataTransfer.files]));
+// Avoid navigating away if files are accidentally dropped just outside the drop zone.
+window.addEventListener('dragover',event=>event.preventDefault());
+window.addEventListener('drop',event=>{event.preventDefault();});
+materialGrant.addEventListener('change',()=>{
+  const grant=materialCatalog?.grants.find(item=>item.id===materialGrant.value);
+  materialTitle.value=grant ? grant.title : '';materialYear.value=grant ? grant.year : '';
+  materialTitle.readOnly=Boolean(grant);materialYear.readOnly=Boolean(grant);
+  for(const item of materialQueue) { const suggested=suggestMaterial(item.file);item.documentKey=suggested.documentKey; }
+  materialChanged();renderMaterialQueue();
+});
+materialTitle.addEventListener('input',materialChanged);materialYear.addEventListener('input',materialChanged);
+document.getElementById('material-clear').onclick=()=>{
+  if (materialBusy) return;
+  materialQueue=[];materialChanged();materialTitle.disabled=false;materialYear.disabled=false;materialGrant.disabled=false;materialInput.disabled=false;
+  renderMaterialQueue();materialStatus.textContent='選択をクリアしました。保存済みの資料は削除していません。';
+};
+function materialBase64(file) {return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error(file.name+'を読み込めませんでした。'));reader.readAsDataURL(file);});}
+materialForm.addEventListener('submit',async event=>{
+  event.preventDefault();if(materialBusy || !materialCatalog || !materialQueue.length)return;
+  for(const item of materialQueue) {
+    if(!item.role || (item.role==='guidelines' && !/\.pdf$/i.test(item.file.name)) || (item.role!=='guidelines' && ((materialGrant.value && !item.documentKey) || ((!materialGrant.value || item.documentKey==='__other') && !item.documentTitle.trim())))) {materialStatus.textContent=item.file.name+'の種類・対応する書類を確認してください。';return;}
+  }
+  if(!materialRequestId)materialRequestId=crypto.randomUUID();
+  materialBusy=true;
+  materialForm.querySelectorAll('input,select,button').forEach(input=>{input.disabled=true;});
+  try {
+    const input={requestId:materialRequestId,grant:materialGrant.value,title:materialTitle.value,year:materialYear.value,files:materialQueue.map(item=>({name:item.file.name,size:item.file.size,role:item.role,documentKey:materialGrant.value && item.documentKey!=='__other' ? item.documentKey : '',documentTitle:item.documentTitle}))};
+    materialStatus.textContent='登録先を準備中…';
+    const batch=await materialRpc('beginGrantMaterialBatch',input);materialBatchStarted=true;
+    for(let index=0;index<materialQueue.length;index++) {
+      materialStatus.textContent=(index+1)+' / '+materialQueue.length+' を保存中：'+materialQueue[index].file.name;
+      await materialRpc('uploadGrantMaterialFile',{id:batch.id,index,base64:await materialBase64(materialQueue[index].file)});
+    }
+    const result=await materialRpc('completeGrantMaterialBatch',batch.id);
+    const count=materialQueue.length;materialQueue=[];materialChanged();
+    materialStatus.textContent=count+'件の資料を保存しました。AI解析・フォーム自動生成はまだ実行されません。';
+    refreshMaterialHistory();
+    if(result.grant && document.getElementById('setup-grant').value===result.grant)loadDocumentSettings();
+  } catch(error) {
+    materialStatus.textContent=(error.message || '保存できませんでした。')+'\n同じ画面で「再試行」を押すと、保存済みのファイルを重複登録せずに再開します。選択を変更する場合は「選択をクリア」を押してください。';
+  } finally {
+    materialBusy=false;
+    document.getElementById('material-clear').disabled=false;
+    for(const input of [materialTitle,materialYear,materialGrant,materialInput])input.disabled=materialBatchStarted;
+    materialSave.textContent=materialBatchStarted ? '再試行' : '確認した資料をまとめて保存';
+    renderMaterialQueue();
+  }
+});
+function refreshMaterialHistory() {
+  const status=document.getElementById('material-history-status');
+  materialRpc('listGrantMaterialBatches').then(items=>{
+    const root=document.getElementById('material-history');root.replaceChildren();
+    status.textContent=items.length ? '' : '一括登録した資料はありません。';
+    for(const item of items) {
+      const group=document.createElement('div');const title=document.createElement('h3');title.textContent=item.year+' '+item.title+' ／ '+(item.state==='completed'?'保存完了':'保存途中');
+      const folder=document.createElement('a');folder.href=item.url;folder.target='_blank';folder.rel='noopener noreferrer';folder.textContent='資料フォルダを開く';
+      const list=document.createElement('ul');
+      for(const file of item.files) {
+        const row=document.createElement('li');const label=({'guidelines':'募集要項',blank:'空欄様式',sample:'記入済み見本'})[file.role];
+        row.textContent=label+' ／ '+file.documentTitle+' ／ ';
+        if(file.uploaded) {const link=document.createElement('a');link.textContent=file.name;link.href=file.url;link.target='_blank';link.rel='noopener noreferrer';row.append(link);} else row.append(file.name+'（未保存）');
+        list.append(row);
+      }
+      group.append(title,folder,list);root.append(group);
+    }
+  }).catch(error=>{status.textContent=error.message;});
+}
+document.getElementById('material-refresh').onclick=refreshMaterialHistory;
+materialRpc('getGrantMaterialCatalog').then(catalog=>{materialCatalog=catalog;for(const item of materialQueue){if(!item.documentKey)item.documentKey=suggestMaterial(item.file).documentKey;}renderMaterialQueue();}).catch(error=>{materialStatus.textContent=error.message;});
+renderMaterialQueue();refreshMaterialHistory();
 
 </script>
