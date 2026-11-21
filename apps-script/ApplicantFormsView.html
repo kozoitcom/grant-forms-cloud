@@ -1,5 +1,5 @@
 <p>①で設定した助成金の申請者フォームを確認し、②の会社台帳・保存済み申請データを事前入力に使って会社専用リンクを発行します。</p>
-<p>現在の対象は「令和8年度 女性活躍情報公開促進奨励金」です。①で保存した新しい助成金の下書きからの自動フォーム生成は準備中です。</p>
+<p>①で必要項目を公開した助成金も、ここから選択して会社別リンクを発行できます。</p>
 <section><h2>申請者フォームの確認・会社向けリンクの発行</h2>
 <form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
 
@@ -30,6 +30,7 @@ const preview = document.getElementById('preview');
 const send = document.getElementById('send');
 const notice = document.getElementById('notice');
 let token;
+google.script.run.withSuccessHandler(items=>{for(const item of items.filter(x=>x.published))document.getElementById('grant').add(new Option(item.year+' '+item.title,'schema:'+item.id));}).withFailureHandler(error=>{notice.textContent=error.message;}).listRequirementForms();
 
 const companySelect = document.getElementById('issue-company');
 const sourceSelect = document.getElementById('source-receipt');

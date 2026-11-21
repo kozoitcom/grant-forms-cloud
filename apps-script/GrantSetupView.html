@@ -10,7 +10,7 @@
 <input id="material-files" type="file" multiple accept=".pdf,.docx,.xlsx" aria-describedby="material-limits">
 <p id="material-limits">PDF・Word（docx）・Excel（xlsx）。1ファイル20 MB、1回30ファイル・合計50 MBまで。追加でドロップできます。</p>
 </div>
-<p>種類の初期候補はファイル名から付けています。各ファイルの種類・対応する書類を確認してください。AIによる内容解析・必要項目の自動生成は未実装です。</p>
+<p>種類の初期候補はファイル名から付けています。各ファイルの種類・対応する書類を確認してください。保存後、下の「必要項目の作成・編集・公開」で資料を解析し、項目を確認してください。</p>
 <p>空欄様式と見本は片方だけでも保存できます。既存助成金の書類に紐づけると、申請書類の様式・見本として登録されます。登録済みの同種ファイルは差し替わりますが、元のファイルは削除しません。「その他」の資料は一括登録フォルダに保存します。</p>
 <p id="material-selection-status" role="status"></p>
 <div style="overflow:auto"><table><thead><tr><th>ファイル</th><th>サイズ</th><th>種類</th><th>対応する書類</th><th>操作</th></tr></thead><tbody id="material-queue"></tbody></table></div>
@@ -189,3 +189,5 @@ materialRpc('getGrantMaterialCatalog').then(catalog=>{materialCatalog=catalog;fo
 renderMaterialQueue();refreshMaterialHistory();
 
 </script>
+
+<!-- The editor is included at the admin template boundary. -->

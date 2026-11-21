@@ -25,6 +25,7 @@ function doGet(event) {
       .setTitle(selected.title + ' | Grant Forms Cloud')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  if (String(params.grant || '').startsWith('schema:')) return requirementPage_(params);
   if (event && event.parameter && event.parameter.grant === 'women-r8') {
     const invitation = params.invite ? readGrantInvitation_(params.invite) : null;
     if (!invitation) requireGrantAdmin_();

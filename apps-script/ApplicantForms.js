@@ -18,6 +18,7 @@ function applicantPrefill_(companyId, sourceReceipt) {
     const application = collectionExport_(sourceReceipt);
     if (record && record.name !== application.company) throw new Error('会社台帳と申請データの会社が一致しません。');
     copyValues(application.values);
+    if(application.schemaVersion===2)for(const [key,value] of Object.entries(application.values)){if(/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(key))prefill[key]=String(value??'').slice(0,4000);}
     prefill.company = application.company;
     prefill.entity = application.entity;
     if (['yes','no'].includes(application.values.location)) prefill.location = application.values.location;
@@ -37,6 +38,11 @@ function applicantPrefill_(companyId, sourceReceipt) {
 
 function getApplicantFormPreview(input) {
   requireGrantAdmin_();
+  if (input && String(input.grant).startsWith('schema:')) {
+    requirementRead_(input.grant.slice(7));
+    applicantPrefill_(input.companyId,input.sourceReceipt);
+    return {url:ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec')+'?grant='+encodeURIComponent(input.grant)+'&preview=1'+(input.companyId?'&companyId='+encodeURIComponent(input.companyId):'')+(input.sourceReceipt?'&sourceReceipt='+encodeURIComponent(input.sourceReceipt):'')};
+  }
   if (!input || input.grant !== 'women-r8') throw new Error('助成金を選び直してください。');
   // Resolve both identifiers now. Never put company details or private ledger entries in the URL.
   applicantPrefill_(input.companyId, input.sourceReceipt);

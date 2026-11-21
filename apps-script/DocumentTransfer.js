@@ -5,7 +5,8 @@ function getTransferPreparation(receipt) {
   requireGrantAdmin_();
   const application = collectionExport_(String(receipt || ''));
   // The only inputs from Systems 1 and 2 are explicit, serializable data contracts.
-  const templates = listGrantDocumentSettings(application.grant).map(document => ({
+  const materialTemplates = application.grant.startsWith('schema:') ? requirementRead_(application.grant.slice(7)).batchIds.flatMap(id=>materialBatch_(id).manifest.files.filter(f=>f.role!=='guidelines').map(f=>({key:f.documentKey||f.documentTitle,title:f.documentTitle,[f.role]:{id:f.fileId,name:f.name,url:f.url}}))) : listGrantDocumentSettings(application.grant);
+  const templates = materialTemplates.map(document => ({
     key:document.key, title:document.title, blank:document.blank || null,
     sample:document.sample || null, uploadNotRequired:Boolean(document.uploadNotRequired)
   }));

@@ -1,0 +1,60 @@
+<section><h2>必要項目の作成・編集・公開</h2>
+<p>資料から作った案を確認し、使用する項目だけを公開します。公開済みの会社リンクは、選択した反映先に応じて更新されます。提出済みの回答と当時の項目は保持します。</p>
+<label>保存済みの項目定義<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">読み込み</button>
+<label>助成金名<input id="req-title" maxlength="180"></label><label>年度<input id="req-year" maxlength="32"></label>
+<label>一括登録した資料<select id="req-batch"><option value="">資料を選択</option></select></label><button type="button" id="req-batches-refresh">資料一覧を更新</button>
+<p>AI解析はGoogle Gemini API接続が必要です。管理者がGASのスクリプトプロパティに GEMINI_API_KEY と GRANT_AI_MODEL を設定します。キーは画面・チャットへ貼り付けないでください。解析は1件15 MBまで、各資料を順番に解析します。</p>
+<label><input id="req-consent" type="checkbox" style="width:auto"> 選択した資料をGoogle Gemini APIへ送信して解析する</label>
+<button id="req-analyze" type="button">未解析の資料から項目案を作成・追加</button><p id="req-analysis" role="status"></p>
+<p>同じID・同じ項目名は候補として表示します。「統合」で根拠・転記先をまとめるか、「別項目として追加」を選んでください。AIの解析だけで公開せず、全資料と照合してください。</p><div id="req-candidates"></div>
+<div id="req-fields"></div><button id="req-add" type="button">項目を追加</button><button id="req-save" type="button">下書きを保存</button>
+<h3>申請者画面の確認</h3><button id="req-preview" type="button">保存済みの下書きをプレビュー</button><a id="req-preview-link" target="_blank" rel="noopener noreferrer" hidden>申請者画面を開く</a>
+<h3>公開・変更の反映先</h3><label>反映先<select id="req-scope"><option value="future">今後発行する会社リンクだけ</option><option value="pending">今後のリンクと既存の未提出会社</option><option value="company">特定の未提出会社だけ</option></select></label>
+<label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
+<label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
+<button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
+</section>
+<script>
+(()=>{
+const $=id=>document.getElementById(id),rpc=(name,...args)=>new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no)[name](...args));
+let draft={id:'',revision:0,title:'',year:'',fields:[],batchIds:[]},batches=[],candidates=[],busy=false,dirty=false;
+const analyzed=new Set();const status=t=>{$('req-status').textContent=t;};
+function edited(){dirty=true;$('req-reviewed').checked=false;$('req-preview-link').hidden=true;}
+function control(tag,value,onchange){const e=document.createElement(tag);e.value=value||'';e.oninput=()=>{onchange(e.value);edited();};return e;}
+function label(parent,title,el){const l=document.createElement('label');l.append(title,el);parent.append(l);}
+function render(){const root=$('req-fields');root.replaceChildren();draft.fields.forEach((f,i)=>{
+ const box=document.createElement('fieldset');box.style.cssText='margin:16px 0;padding:16px;min-width:0';const legend=document.createElement('legend');legend.textContent=(i+1)+'. '+f.label+(f.enabled?'':'（使用しない）');box.append(legend);
+ label(box,'項目名',control('input',f.label,v=>f.label=v));label(box,'項目ID（公開後は変更しない）',control('input',f.id,v=>f.id=v));
+ const type=document.createElement('select');for(const [v,t] of Object.entries({text:'短い文章',textarea:'長い文章',number:'数値',date:'日付',email:'メール',select:'プルダウン',checkbox:'同意チェック',file:'提出PDF'}))type.add(new Option(t,v));type.value=f.type;type.onchange=()=>{f.type=type.value;edited();};label(box,'入力形式',type);
+ for(const [key,title] of [['enabled','使用する（外すと申請者画面から非表示）'],['required','必須']]){const c=document.createElement('input');c.type='checkbox';c.style.width='auto';c.checked=f[key];c.onchange=()=>{f[key]=c.checked;edited();};label(box,title,c);}
+ label(box,'説明',control('textarea',f.help,v=>f.help=v));label(box,'選択肢（1行に1つ）',control('textarea',(f.options||[]).join('\n'),v=>f.options=v.split('\n').map(s=>s.trim()).filter(Boolean)));
+ label(box,'根拠の資料・ページ／シート・セル',control('textarea',f.source,v=>f.source=v));label(box,'転記する書類・位置',control('textarea',f.target,v=>f.target=v));
+ label(box,'表示条件の項目ID（条件なしは空欄）',control('input',f.condition?.field,v=>{f.condition=v?{field:v,equals:f.condition?.equals||''}:null;}));
+ label(box,'表示する回答値（チェック項目は true）',control('input',f.condition?.equals,v=>{if(f.condition)f.condition.equals=v;}));root.append(box);
+});}
+function freshId(){return 'field_'+crypto.randomUUID().replace(/-/g,'').slice(0,16);}
+function add(f){const copy=structuredClone(f);if(draft.fields.some(x=>x.id===copy.id))copy.id=freshId();draft.fields.push(copy);edited();render();}
+function renderCandidates(){$('req-candidates').replaceChildren();candidates.forEach((f,i)=>{const box=document.createElement('fieldset'),text=document.createElement('p');text.textContent='候補：'+f.label+' ／ '+f.source;box.append(text);const match=draft.fields.find(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'));
+ if(match){const merge=document.createElement('button');merge.type='button';merge.textContent='既存「'+match.label+'」に根拠・転記先を統合';merge.onclick=()=>{for(const k of ['source','target'])match[k]=[...new Set([match[k],f[k]].filter(Boolean))].join('\n');candidates.splice(i,1);edited();render();renderCandidates();};box.append(merge);}
+ for(const [title,action] of [['別項目として追加',()=>add(f)],['採用しない',()=>{}]]){const b=document.createElement('button');b.type='button';b.textContent=title;b.onclick=()=>{action();candidates.splice(i,1);renderCandidates();};box.append(b);}$('req-candidates').append(box);});}
+async function refresh(){const [defs,bs,invites]=await Promise.all([rpc('listRequirementForms'),rpc('listGrantMaterialBatches'),rpc('listGrantInvitations')]);batches=bs.filter(x=>x.state==='completed');const old=$('req-def').value;$('req-def').replaceChildren(new Option('新しく作成',''));defs.forEach(d=>$('req-def').add(new Option(d.year+' '+d.title+(d.published?'（公開済み）':'（下書き）'),d.id)));$('req-def').value=old;
+ $('req-batch').replaceChildren(new Option('資料を選択',''));batches.forEach(b=>$('req-batch').add(new Option(b.year+' '+b.title+' / '+b.files.length+'件',b.id)));
+ $('req-company').replaceChildren(new Option('会社リンクを選択',''));invites.filter(i=>!i.receipt&&!i.deletedAt&&i.grant==='schema:'+draft.id&&Date.now()<i.expiresAt).forEach(i=>$('req-company').add(new Option(i.company+' / '+i.email,i.historyId)));
+}
+async function run(fn){if(busy)return;busy=true;document.querySelectorAll('#req-fields input,#req-fields select,#req-fields textarea,[id^="req-"]').forEach(e=>{if(e.tagName==='BUTTON')e.disabled=true;});try{await fn();}catch(e){status(e.message);}finally{busy=false;document.querySelectorAll('button[id^="req-"]').forEach(e=>e.disabled=false);}}
+$('req-load').onclick=()=>run(async()=>{if(dirty&&!confirm('未保存の変更を破棄して読み込みますか？'))return;draft=$('req-def').value?await rpc('getRequirementForm',$('req-def').value):{id:'',revision:0,title:'',year:'',fields:[],batchIds:[]};$('req-title').value=draft.title;$('req-year').value=draft.year;candidates=[];analyzed.clear();dirty=false;render();renderCandidates();await refresh();status('読み込みました。');});
+$('req-batches-refresh').onclick=()=>run(refresh);
+$('req-title').oninput=$('req-year').oninput=edited;
+$('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.title){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
+$('req-add').onclick=()=>add({id:freshId(),label:'追加項目',type:'text',options:[],required:false,enabled:true,help:'',source:'管理者が追加',target:'',condition:null});
+$('req-analyze').onclick=()=>run(async()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(!b)throw Error('解析する一括資料を選択してください。');if(!$('req-consent').checked)throw Error('Google Gemini APIへの送信確認にチェックしてください。');
+ if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
+ for(let i=0;i<b.files.length;i++){const key=b.id+':'+i;if(analyzed.has(key))continue;$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件を解析中…';const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true});for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}analyzed.add(key);renderCandidates();}
+ $('req-analysis').textContent='選択資料の解析が完了しました。候補と全項目を確認してください。';});
+$('req-save').onclick=()=>run(async()=>{draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});dirty=false;await refresh();$('req-def').value=draft.id;status('下書き保存済み：第'+draft.revision+'版');});
+$('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
+$('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
+rpc('getRequirementAiStatus').then(r=>{$('req-analysis').textContent=r.configured?'AI接続設定あり。選択した資料を解析できます。':'AI接続は未設定です。項目の手動編集・保存・公開は利用できます。';}).catch(e=>status(e.message));
+refresh().catch(e=>status(e.message));
+})();
+</script>

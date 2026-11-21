@@ -120,7 +120,7 @@ function grantInvitationKey_(token) {
 function readGrantInvitation_(token) {
   const raw = PropertiesService.getScriptProperties().getProperty(grantInvitationKey_(token));
   const invitation = raw ? JSON.parse(raw) : null;
-  if (!invitation || invitation.grant !== 'women-r8' || invitation.deletedAt || Date.now() > invitation.expiresAt) {
+  if (!invitation || (invitation.grant !== 'women-r8' && !/^schema:[a-f0-9-]{36}$/.test(invitation.grant)) || invitation.deletedAt || Date.now() > invitation.expiresAt) {
     throw new Error('受付リンクが無効か、期限が切れています。');
   }
   return invitation;
@@ -140,6 +140,7 @@ function listGrantInvitations() {
 
 function createGrantInvitation(input) {
   requireGrantAdmin_();
+  if (String(input.grant || '').startsWith('schema:')) return createRequirementInvitation_(input);
   const companyId = String(input.companyId || '');
   const record = companyId ? listCompanyNumbers().find(item => item.id === companyId) : null;
   if (companyId && !record) throw new Error('会社台帳から会社を選び直してください。');
@@ -167,7 +168,7 @@ function createGrantInvitation(input) {
 }
 
 function grantInvitationMessage_(token, invitation) {
-  const title = GRANT_FORMS[invitation.grant];
+  const title = invitation.grant.startsWith('schema:') ? resolveRequirementSnapshot_(invitation).title : GRANT_FORMS[invitation.grant];
   const url = ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec') +
     '?grant=' + encodeURIComponent(invitation.grant) + '&invite=' + encodeURIComponent(token);
   const deadline = Utilities.formatDate(new Date(invitation.expiresAt), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
@@ -351,11 +352,13 @@ function collectionMetadata_(row) {
 
 function listCollectedApplications() {
   requireGrantAdmin_();
-  return collectionRows_().map(collectionMetadata_).reverse();
+  return collectionRows_().map(collectionMetadata_).reverse().concat(typeof requirementResponses_ === 'function' ? requirementResponses_().map(({definition,values,...record})=>record) : []);
 }
 
 function collectionExport_(receipt) {
   if (!/^[a-f0-9-]{36}$/.test(String(receipt || ''))) throw new Error('申請を選び直してください。');
+  const generic = typeof requirementResponses_ === 'function' && requirementResponses_().find(item=>item.receipt===receipt);
+  if (generic) return generic;
   const row = collectionRows_().find(item => String(item[1]) === receipt);
   if (!row) throw new Error('保存済みの申請データが見つかりません。');
   const text = value => String(value || '').replace(/^'(?=[=+@-])/, '');
