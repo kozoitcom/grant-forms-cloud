@@ -11,7 +11,7 @@
 <p id="material-limits">PDF・Word（docx）・Excel（xlsx）。1ファイル20 MB、1回30ファイル・合計50 MBまで。追加でドロップできます。</p>
 </div>
 <p>種類の初期候補はファイル名から付けています。各ファイルの種類・対応する書類を確認してください。AIによる内容解析・必要項目の自動生成は未実装です。</p>
-<p>空欄様式と見本は片方だけでも保存できます。既存助成金の書類に紐づけると「様式・見本の設定」にも反映します。登録済みの同種ファイルは差し替わりますが、元のファイルは削除しません。「その他」の資料は一括登録フォルダに保存します。</p>
+<p>空欄様式と見本は片方だけでも保存できます。既存助成金の書類に紐づけると、申請書類の様式・見本として登録されます。登録済みの同種ファイルは差し替わりますが、元のファイルは削除しません。「その他」の資料は一括登録フォルダに保存します。</p>
 <p id="material-selection-status" role="status"></p>
 <div style="overflow:auto"><table><thead><tr><th>ファイル</th><th>サイズ</th><th>種類</th><th>対応する書類</th><th>操作</th></tr></thead><tbody id="material-queue"></tbody></table></div>
 <button id="material-save" type="submit" disabled>確認した資料をまとめて保存</button>
@@ -21,65 +21,7 @@
 <section><h2>一括登録した資料</h2><button id="material-refresh" type="button">一覧を更新</button><p id="material-history-status" role="status"></p><div id="material-history"></div></section>
 
 <section><h2>以前に保存した募集要項</h2><p id="draft-status" role="status"></p><ul id="drafts"></ul></section>
-<section><h2>様式・見本の設定</h2><label for="setup-grant">助成金フォーム</label><select id="setup-grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select><div id="document-settings"></div><p id="document-settings-status" role="status"></p></section>
 <script>
-function loadDocumentSettings() {
-  const grant = document.getElementById('setup-grant').value;
-  const root = document.getElementById('document-settings');
-  const status = document.getElementById('document-settings-status');
-  root.textContent = '書類設定を読み込み中…';
-  google.script.run.withSuccessHandler(documents => {
-    if (document.getElementById('setup-grant').value !== grant) return;
-    root.replaceChildren();
-    for (const documentInfo of documents) {
-      const details = document.createElement('fieldset');
-      details.style.cssText = 'min-width:0;margin:18px 0;padding:16px;border:1px solid #d7e3e5;border-radius:8px';
-      const summary = document.createElement('legend');
-      summary.style.fontWeight = '700';
-      summary.textContent = documentInfo.title + (documentInfo.uploadNotRequired ? '（申請者アップロード不要）' : '');
-      details.append(summary);
-      const form = document.createElement('form');
-      for (const [name,value] of [['grant',grant],['documentKey',documentInfo.key]]) {
-        const hidden = document.createElement('input');
-        hidden.type = 'hidden'; hidden.name = name; hidden.value = value;
-        form.append(hidden);
-      }
-      for (const [type,title] of [['blank','公式の空欄様式'],['sample','記入済み見本（管理者用）']]) {
-        const label = document.createElement('label');
-        label.textContent = title + '（PDF・docx・xlsx、20 MBまで）';
-        const file = document.createElement('input');
-        file.type = 'file'; file.name = type; file.accept = '.pdf,.docx,.xlsx';
-        label.append(file); form.append(label);
-        if (documentInfo[type]) {
-          const link = document.createElement('a');
-          link.href = documentInfo[type].url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-          link.textContent = '登録済み：' + documentInfo[type].name;
-          form.append(link);
-        }
-      }
-      const label = document.createElement('label');
-      const check = document.createElement('input');
-      check.type = 'checkbox'; check.name = 'uploadNotRequired';
-      check.checked = Boolean(documentInfo.uploadNotRequired); check.style.width = 'auto';
-      label.append(check, ' 申請者のアップロード不要（添付欄をグレーアウト）');
-      form.append(label);
-      const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'この書類の設定を保存';
-      form.append(save);
-      form.addEventListener('submit', event => {
-        event.preventDefault(); save.disabled = true; status.textContent = '保存中…';
-        google.script.run.withSuccessHandler(() => {
-          status.textContent = '保存しました。'; loadDocumentSettings();
-        }).withFailureHandler(error => {
-          save.disabled = false; status.textContent = error.message;
-        }).saveGrantDocumentSettings(form);
-      });
-      details.append(form); root.append(details);
-    }
-  }).withFailureHandler(error => { root.textContent = error.message; }).listGrantDocumentSettings(grant);
-}
-
-document.getElementById('setup-grant').addEventListener('change', loadDocumentSettings);
-loadDocumentSettings();
 const draftStatus = document.getElementById('draft-status');
 const draftList = document.getElementById('drafts');
 function refreshDrafts() {
@@ -213,7 +155,6 @@ materialForm.addEventListener('submit',async event=>{
     const count=materialQueue.length;materialQueue=[];materialChanged();
     materialStatus.textContent=count+'件の資料を保存しました。AI解析・フォーム自動生成はまだ実行されません。';
     refreshMaterialHistory();
-    if(result.grant && document.getElementById('setup-grant').value===result.grant)loadDocumentSettings();
   } catch(error) {
     materialStatus.textContent=(error.message || '保存できませんでした。')+'\n同じ画面で「再試行」を押すと、保存済みのファイルを重複登録せずに再開します。選択を変更する場合は「選択をクリア」を押してください。';
   } finally {
