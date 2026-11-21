@@ -39,12 +39,11 @@ function getApplicantFormPreview(input) {
   requireGrantAdmin_();
   if (!input || input.grant !== 'women-r8') throw new Error('助成金を選び直してください。');
   // Resolve both identifiers now. Never put company details or private ledger entries in the URL.
-  const prefill = applicantPrefill_(input.companyId, input.sourceReceipt);
+  applicantPrefill_(input.companyId, input.sourceReceipt);
   const base = ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec');
   return {url:base + '?grant=women-r8&preview=1' +
     (input.companyId ? '&companyId=' + encodeURIComponent(input.companyId) : '') +
-    (input.sourceReceipt ? '&sourceReceipt=' + encodeURIComponent(input.sourceReceipt) : ''),
-    html:buildApplicantPage_(null, prefill, '', true).getContent()};
+    (input.sourceReceipt ? '&sourceReceipt=' + encodeURIComponent(input.sourceReceipt) : '')};
 }
 
 function saveApplicantPrefill_(prefill) {

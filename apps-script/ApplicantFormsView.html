@@ -10,7 +10,7 @@
 <label for="company">会社名</label><input id="company" name="company" maxlength="120" required>
 <label for="email">案内メールの宛先</label><input id="email" name="email" type="email" maxlength="180" required>
 <button id="open-form-preview" type="button">申請者画面をプレビュー</button>
-<p><a id="applicant-preview-link" target="_blank" rel="noopener noreferrer" hidden>データを反映した申請者画面を開く</a></p>
+
 <button type="submit">専用リンクを発行</button></form>
 <div id="preview" hidden>
 <label for="link">会社専用リンク</label><input id="link" readonly>
@@ -20,8 +20,8 @@
 <p><a id="issued-form-link" target="_blank" rel="noopener noreferrer">発行した会社専用フォームを開く</a></p>
 <button id="send" type="button">この内容でメール送信</button></div>
 <p id="notice" role="status"></p></section>
-<section><h2>申請者が入力する画面</h2><p>上の会社・申請データを選び「申請者画面をプレビュー」を押すと、実際と同じ入力画面をここに表示します。</p>
-<iframe id="applicant-inline-preview" title="申請者入力画面のプレビュー" sandbox="allow-scripts" style="width:100%;height:900px;border:1px solid #d7e3e5;border-radius:8px" hidden></iframe>
+<section><h2>申請者が入力する画面</h2><p>上の会社・申請データを選び「申請者画面をプレビュー」を押してください。実際と同じ入力画面を別タブで確認できます。</p>
+<p><a id="applicant-preview-link" target="_blank" rel="noopener noreferrer" hidden>データを反映した申請者画面を開く（別タブ）</a></p>
 </section>
 <script>
 const issue = document.getElementById('issue');
@@ -46,7 +46,6 @@ let formRequest = 0;
 function clearIssuedLink() {
   token = ''; preview.hidden = true; send.disabled = true;
   document.getElementById('applicant-preview-link').hidden = true;
-  const frame = document.getElementById('applicant-inline-preview'); frame.hidden = true; frame.srcdoc = '';
   ++formRequest;
 }
 function updateCompanyOptions() {
@@ -86,8 +85,7 @@ document.getElementById('open-form-preview').addEventListener('click', () => {
     button.disabled = false;
     if (request !== formRequest) return;
     const link = document.getElementById('applicant-preview-link'); link.href = result.url; link.hidden = false;
-    const frame = document.getElementById('applicant-inline-preview'); frame.srcdoc = result.html; frame.hidden = false;
-    notice.textContent = '下に申請者の入力画面を表示しました。プレビューからの送信はできません。';
+    notice.textContent = '下の「データを反映した申請者画面を開く」から入力画面を確認してください。プレビューからの送信はできません。';
   }).withFailureHandler(error => { button.disabled = false; if (request === formRequest) notice.textContent = error.message; }).getApplicantFormPreview({grant:document.getElementById('grant').value,companyId:companySelect.value,sourceReceipt:sourceSelect.value});
 });
 function showError(error) { notice.textContent = error.message || '処理できませんでした。'; }
