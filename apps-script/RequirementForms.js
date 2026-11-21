@@ -159,6 +159,7 @@ function requirementAiFailure_(error){
 }
 function authorizeGrantAiConnection(){
  requireGrantAdmin_();
+ ScriptApp.requireScopes(ScriptApp.AuthMode.FULL,['https://www.googleapis.com/auth/script.external_request']);
  const p=PropertiesService.getScriptProperties(),key=p.getProperty('GEMINI_API_KEY'),model=p.getProperty('GRANT_AI_MODEL');
  if(!key||!model||!/^gemini-[a-z0-9.-]+$/.test(model))throw new Error('APIキーとモデルの設定を確認してください。');
  let response;
