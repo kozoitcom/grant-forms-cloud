@@ -5,9 +5,7 @@
 <label for="draft-year">年度</label><input id="draft-year" name="year" maxlength="32" placeholder="令和8年度" required>
 <label for="draft-pdf">募集要項PDF（20 MBまで）</label>
 <input id="draft-pdf" name="guidelines" type="file" accept=".pdf,application/pdf" required>
-<label for="draft-fields">入力項目案</label><textarea id="draft-fields" name="fields" maxlength="4000" placeholder="企業名、担当者名、対象事業所など"></textarea>
-<label for="draft-documents">提出書類案・必須条件</label><textarea id="draft-documents" name="documents" maxlength="4000" placeholder="登記事項証明書（法人のみ）など"></textarea>
-<button type="submit">募集要項と項目案を下書き保存</button>
+<button type="submit">募集要項を下書き保存</button>
 <p id="draft-status" role="status"></p>
 </form>
 <h3>保存済みの下書き</h3><ul id="drafts"></ul>
@@ -87,10 +85,6 @@ function refreshDrafts() {
       pdf.rel = 'noopener noreferrer';
       pdf.textContent = '募集要項PDFを開く';
       detail.append(pdf);
-      const notes = document.createElement('p');
-      notes.style.whiteSpace = 'pre-wrap';
-      notes.textContent = '入力項目案\n' + (item.fields || '未入力') + '\n\n提出書類案・必須条件\n' + (item.documents || '未入力');
-      detail.append(notes);
       row.append(detail);
       draftList.append(row);
     }
