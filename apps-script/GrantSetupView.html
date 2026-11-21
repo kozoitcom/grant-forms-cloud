@@ -21,8 +21,10 @@ function loadDocumentSettings() {
     if (document.getElementById('setup-grant').value !== grant) return;
     root.replaceChildren();
     for (const documentInfo of documents) {
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
+      const details = document.createElement('fieldset');
+      details.style.cssText = 'min-width:0;margin:18px 0;padding:16px;border:1px solid #d7e3e5;border-radius:8px';
+      const summary = document.createElement('legend');
+      summary.style.fontWeight = '700';
       summary.textContent = documentInfo.title + (documentInfo.uploadNotRequired ? '（申請者アップロード不要）' : '');
       details.append(summary);
       const form = document.createElement('form');
