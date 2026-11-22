@@ -12,7 +12,7 @@
 <label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
 <button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
 <label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をOpenAI APIへ送信してGPTで解析します。API利用料が発生する場合があることを確認しました</label>
-<button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
+<p>作成方法を選択：以前の方式は基本項目・書類名から作成し、募集要項本文の自動解析は行いません。</p><button id="req-basic" type="button">以前の方式：基本項目を作成（API不要）</button><button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
 <p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p>
 <p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
@@ -70,6 +70,7 @@ $('req-batches-refresh').onclick=()=>run(refresh);
 $('req-title').oninput=$('req-year').oninput=edited;
 $('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.id){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
 $('req-add').onclick=()=>add({id:freshId(),label:'追加項目',type:'text',options:[],required:false,enabled:true,help:'',source:'管理者が追加',target:'',condition:null});
+$('req-basic').onclick=()=>run(async()=>{const batch=batches.find(b=>b.id===$('req-batch').value);if(!batch)throw Error('①で登録済み資料を選択してください。');const result=await rpc('getBasicRequirementFields',batch.id);if(!draft.batchIds.includes(batch.id))draft.batchIds.push(batch.id);if(!draft.id){draft.title=batch.title;draft.year=batch.year;$('req-title').value=batch.title;$('req-year').value=batch.year;}let count=0;for(const f of result.fields){if(!draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'))){add(f);count++;}}edited();$('req-analysis').textContent=result.message+' 追加：'+count+'項目。';status('APIを使用せず項目案を作成しました。確認して保存してください。');});
 $('req-analyze').onclick=()=>run(async()=>{
  let timer;
  try {
