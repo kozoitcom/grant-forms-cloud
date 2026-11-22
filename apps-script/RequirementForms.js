@@ -188,7 +188,7 @@ function analyzeRequirementMaterial(input){
  const c=openAiRequirementConfig_();if(!c.key)throw new Error('GPT接続が未設定です。OpenAI APIキーを管理画面のGPT接続設定へ登録してください。');
  if(input?.provider!=='openai'||input.consent!==true)throw new Error('選択資料をOpenAI APIへ送信する確認にチェックしてください。');
  const batch=materialBatch_(input.batchId).manifest;if(batch.state!=='completed')throw new Error('資料を保存してください。');
- const item=batch.files[input.index];if(!item?.fileId)throw new Error('解析する資料を選択してください。');
+ const item=batch.files[input.index];if(!item?.fileId||item.deletedAt)throw new Error('解析する資料を選択してください。');
  const blob=DriveApp.getFileById(item.fileId).getBlob();if(blob.getBytes().length>15*1024*1024)throw new Error('GPT解析は1資料15 MB以内に分割してください。');
  const response=requirementAiFetch_('https://api.openai.com/v1/responses',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+c.key},muteHttpExceptions:true,payload:JSON.stringify(openAiRequirementPayload_(item,blob,c.model))});
  const result=parseOpenAiRequirements_(response.getContentText());
