@@ -103,7 +103,7 @@ function uploadGrantMaterialFile(input) {
   try {
     const batch = materialBatch_(input.id), manifest = batch.manifest;
     const item = manifest.files[input.index];
-    if (!item) throw new Error('対象ファイルが見つかりません。');
+    if (!item || item.deletedAt) throw new Error('対象ファイルが見つかりません。');
     const bytes = Utilities.base64Decode(input.base64);
     if (bytes.length !== item.size || bytes.length > MATERIAL_FILE_LIMIT) throw new Error(item.name + 'のファイルサイズが一致しません。');
     const extension = item.name.match(/\.(pdf|docx|xlsx)$/i)[1].toLowerCase();
@@ -133,12 +133,12 @@ function completeGrantMaterialBatch(id) {
   try {
     const batch = materialBatch_(id), manifest = batch.manifest;
     if (manifest.state === 'completed') return {id,grant:manifest.grant,url:batch.folder.getUrl()};
-    if (manifest.files.some(item => !item.fileId)) throw new Error('まだアップロードされていないファイルがあります。再試行してください。');
-    for (const item of manifest.files) if (DriveApp.getFileById(item.fileId).isTrashed()) throw new Error('削除されたファイルがあります。新しい登録を開始してください。');
+    if (manifest.files.some(item => !item.deletedAt && !item.fileId)) throw new Error('まだアップロードされていないファイルがあります。再試行してください。');
+    for (const item of manifest.files.filter(x=>!x.deletedAt)) if (DriveApp.getFileById(item.fileId).isTrashed()) throw new Error('削除されたファイルがあります。新しい登録を開始してください。');
     if (manifest.grant === 'women-r8') {
       const settings = getDocumentSettings_();
       let changed = false;
-      for (const item of manifest.files) {
+      for (const item of manifest.files.filter(x=>!x.deletedAt)) {
         if (item.role === 'guidelines' || !item.documentKey) continue;
         const entry = settings[item.documentKey] || {};
         entry[item.role] = {id:item.fileId,name:item.name,url:item.url};
@@ -163,8 +163,25 @@ function listGrantMaterialBatches() {
     try {
       const batch = JSON.parse(manifests.next().getBlob().getDataAsString('UTF-8'));
       results.push({id:batch.id,title:batch.title,year:batch.year,grant:batch.grant,state:batch.state,
-        createdAt:batch.createdAt,url:folder.getUrl(),files:batch.files.map(item=>({name:item.name,role:item.role,documentTitle:item.documentTitle,uploaded:Boolean(item.fileId),url:item.url || ''}))});
+        createdAt:batch.createdAt,url:folder.getUrl(),files:batch.files.map((item,index)=>({...item,index})).filter(item=>!item.deletedAt).map(item=>({index:item.index,name:item.name,role:item.role,documentTitle:item.documentTitle,uploaded:Boolean(item.fileId),url:item.url || ''}))});
     } catch (_) {}
   }
   return results.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+}
+
+function removeGrantMaterialFile(input){
+ requireGrantAdmin_();const lock=LockService.getScriptLock();lock.waitLock(20000);
+ try{const b=materialBatch_(input?.id);if(b.manifest.state!=='completed')throw new Error('資料の保存を完了してから削除してください。');const item=b.manifest.files[input.index];if(!item)throw new Error('資料が見つかりません。');if(item.deletedAt)return {removed:true};
+ if(b.manifest.grant==='women-r8'&&item.documentKey){const settings=getDocumentSettings_();if(settings[item.documentKey]?.[item.role]?.id===item.fileId){delete settings[item.documentKey][item.role];writeDocumentSettings_(settings);}}
+ item.deletedAt=new Date().toISOString();b.file.setContent(JSON.stringify(b.manifest));return {removed:true};
+ }finally{lock.releaseLock();}
+}
+function appendGrantMaterialFiles(input){
+ requireGrantAdmin_();const metadata=materialMetadata_(input);const lock=LockService.getScriptLock();lock.waitLock(20000);
+ try{const b=materialBatch_(input.batchId),m=b.manifest;const signature=JSON.stringify(metadata);m.appendRequests=m.appendRequests||{};const prior=m.appendRequests[metadata.id];if(prior){if(prior.signature!==signature)throw new Error('追加資料が変更されています。選択をクリアしてください。');return {id:m.id,offset:prior.offset};}
+ if(m.state!=='completed')throw new Error('前の資料の保存を完了してください。');
+ if(m.grant!==metadata.grant||m.title!==metadata.title||m.year!==metadata.year)throw new Error('追加先を選び直してください。');
+ const active=m.files.filter(f=>!f.deletedAt),all=[...active,...metadata.files];if(all.length>MATERIAL_BATCH_COUNT||all.reduce((s,f)=>s+f.size,0)>MATERIAL_BATCH_LIMIT)throw new Error('資料グループは30件・合計50 MB以内にしてください。');
+ const offset=m.files.length;m.files.push(...metadata.files);m.appendRequests[metadata.id]={signature,offset};m.state='uploading';b.file.setContent(JSON.stringify(m));return {id:m.id,offset};
+ }finally{lock.releaseLock();}
 }
