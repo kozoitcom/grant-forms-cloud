@@ -79,11 +79,11 @@ $('req-analyze').onclick=()=>run(async()=>{
   if(!connection.configured)throw Error('GPT接続が未設定のため解析は開始していません。下の「GPT接続設定」でOpenAI APIキーを保存してください。GeminiのAPIキーは使えません。');
   if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
   for(let i=0;i<b.files.length;i++){
-   const key=b.id+':'+i;if(analyzed.has(key))continue;
+   const materialIndex=b.files[i].index??i;const key=b.id+':'+materialIndex;if(analyzed.has(key))continue;
    const started=Date.now();
    const progress=()=>{const seconds=Math.floor((Date.now()-started)/1000);$('req-analysis').textContent=(i+1)+' / '+b.files.length+'件目：'+b.files[i].name+' を解析中（経過 '+seconds+'秒）'+(seconds>=120?'。GPTの応答を待っています。重ねて実行せず、この画面でお待ちください。':'');};
    progress();timer=setInterval(progress,1000);
-   const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:i,consent:true,provider:'openai'});
+   const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:materialIndex,consent:true,provider:'openai'});
    clearInterval(timer);timer=null;
    for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}
    if(result.warnings?.length)$('req-ai-warnings').textContent += result.name+'：\n'+result.warnings.join('\n')+'\n';
