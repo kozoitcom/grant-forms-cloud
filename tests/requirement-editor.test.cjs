@@ -12,9 +12,9 @@ test('editing the same field after saving updates the newly returned draft objec
  assert.equal(nodes.get('req-panel-basic').hidden,true);nodes.get('req-tab-basic').onclick();assert.equal(nodes.get('req-panel-api').hidden,true);assert.equal(nodes.get('req-panel-basic').hidden,false);assert.equal(nodes.get('req-tab-basic')['aria-selected'],'true');nodes.get('req-tab-api').onclick();assert.equal(nodes.get('req-panel-basic').hidden,true);
  nodes.get('req-title').value='動作確認';nodes.get('req-year').value='令和8年度';nodes.get('req-add').onclick();await nodes.get('req-save').onclick();
  const row=nodes.get('req-fields').children[0];const details=row.children[1];assert.equal(details.tagName,'DETAILS');assert(!details.open);const labels=details.children[1].children;const control=title=>labels.find(x=>x.children?.[0]===title).children[1];
- const enabled=row.children[0].children[0];enabled.checked=false;enabled.onchange();assert.equal(row.children[0].children[1].textContent,'不要');
+ const enabled=row.children[0].children[0];const stageBoxes=row.children[2].children.map(l=>l.children[0]);stageBoxes[1].checked=true;stageBoxes[1].onchange();enabled.checked=false;enabled.onchange();assert(stageBoxes.every(c=>!c.checked&&c.disabled));assert.equal(row.children[0].children[1].textContent,'不要');
  const name=control('項目名');name.value='保存後に変更';name.oninput();await nodes.get('req-save').onclick();
- assert.equal(calls.length,2);assert.equal(calls[1].fields[0].enabled,false);assert.equal(calls[1].fields[0].label,'保存後に変更');assert.equal(saved.revision,2);
+ assert.equal(calls.length,2);assert.equal(calls[1].fields[0].enabled,false);assert.equal(calls[1].fields[0].label,'保存後に変更');assert.equal(saved.revision,2);assert.equal(saved.fields[0].stages.length,0);
 });
 test('missing AI settings and API failures replace the progress beside the analysis button',async()=>{
  for(const configured of [false,true]){
