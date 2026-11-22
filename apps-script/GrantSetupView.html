@@ -56,6 +56,7 @@ const materialGrant = document.getElementById('material-grant');
 const materialTitle = document.getElementById('material-title');
 const materialYear = document.getElementById('material-year');
 const materialSave = document.getElementById('material-save');
+let materialAppendTarget = null;
 let materialQueue = [], materialCatalog = null, materialBusy = false, materialRequestId = '', materialBatchStarted = false;
 function materialRpc(name,...args) {
   return new Promise((resolve,reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args));
@@ -131,7 +132,7 @@ materialGrant.addEventListener('change',()=>{
 materialTitle.addEventListener('input',materialChanged);materialYear.addEventListener('input',materialChanged);
 document.getElementById('material-clear').onclick=()=>{
   if (materialBusy) return;
-  materialQueue=[];materialChanged();materialTitle.disabled=false;materialYear.disabled=false;materialGrant.disabled=false;materialInput.disabled=false;
+  materialAppendTarget=null;materialQueue=[];materialChanged();materialTitle.disabled=false;materialYear.disabled=false;materialGrant.disabled=false;materialInput.disabled=false;
   renderMaterialQueue();materialStatus.textContent='選択をクリアしました。保存済みの資料は削除していません。';
 };
 function materialBase64(file) {return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error(file.name+'を読み込めませんでした。'));reader.readAsDataURL(file);});}
@@ -146,13 +147,13 @@ materialForm.addEventListener('submit',async event=>{
   try {
     const input={requestId:materialRequestId,grant:materialGrant.value,title:materialTitle.value,year:materialYear.value,files:materialQueue.map(item=>({name:item.file.name,size:item.file.size,role:item.role,documentKey:materialGrant.value && item.documentKey!=='__other' ? item.documentKey : '',documentTitle:item.documentTitle}))};
     materialStatus.textContent='登録先を準備中…';
-    const batch=await materialRpc('beginGrantMaterialBatch',input);materialBatchStarted=true;
+    const batch=materialAppendTarget?await materialRpc('appendGrantMaterialFiles',{...input,batchId:materialAppendTarget.id}):await materialRpc('beginGrantMaterialBatch',input);materialBatchStarted=true;
     for(let index=0;index<materialQueue.length;index++) {
       materialStatus.textContent=(index+1)+' / '+materialQueue.length+' を保存中：'+materialQueue[index].file.name;
-      await materialRpc('uploadGrantMaterialFile',{id:batch.id,index,base64:await materialBase64(materialQueue[index].file)});
+      await materialRpc('uploadGrantMaterialFile',{id:batch.id,index:index+(batch.offset||0),base64:await materialBase64(materialQueue[index].file)});
     }
     const result=await materialRpc('completeGrantMaterialBatch',batch.id);
-    const count=materialQueue.length;materialQueue=[];materialChanged();
+    const count=materialQueue.length;materialQueue=[];materialAppendTarget=null;materialChanged();
     materialStatus.textContent=count+'件の資料を保存しました。AI解析・フォーム自動生成はまだ実行されません。';
     refreshMaterialHistory();
   } catch(error) {
@@ -178,9 +179,9 @@ function refreshMaterialHistory() {
         const row=document.createElement('li');const label=({'guidelines':'募集要項',blank:'空欄様式',sample:'記入済み見本'})[file.role];
         row.textContent=label+' ／ '+file.documentTitle+' ／ ';
         if(file.uploaded) {const link=document.createElement('a');link.textContent=file.name;link.href=file.url;link.target='_blank';link.rel='noopener noreferrer';row.append(link);} else row.append(file.name+'（未保存）');
-        list.append(row);
+        if(item.state==='completed'){const remove=document.createElement('button');remove.type='button';remove.textContent='削除';remove.style.cssText='margin:4px 8px;padding:4px 12px';remove.onclick=async()=>{if(!confirm(file.name+'を登録資料から外しますか？原本ファイルと作成済みの入力項目は残ります。'))return;remove.disabled=true;try{await materialRpc('removeGrantMaterialFile',{id:item.id,index:file.index});refreshMaterialHistory();}catch(e){status.textContent=e.message;remove.disabled=false;}};row.append(remove);}list.append(row);
       }
-      group.append(title,folder,list);root.append(group);
+      const add=document.createElement('button');add.type='button';add.textContent='この資料グループに追加';add.disabled=item.state!=='completed';add.onclick=()=>{if(materialBusy||materialBatchStarted||materialQueue.length){status.textContent='先に現在のアップロードを完了するか、選択をクリアしてください。';return;}materialAppendTarget=item;materialGrant.value=item.grant||'';materialTitle.value=item.title;materialYear.value=item.year;materialTitle.readOnly=true;materialYear.readOnly=true;materialGrant.disabled=true;materialStatus.textContent='追加先：'+item.title+'。上の枠へ資料をドロップし、種類を確認して保存してください。';materialForm.scrollIntoView({behavior:'smooth'});};group.append(title,folder,add,list);root.append(group);
     }
   }).catch(error=>{status.textContent=error.message;});
 }
