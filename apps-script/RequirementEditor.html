@@ -1,11 +1,19 @@
-<section><h2>資料から必要項目を作成</h2>
+<section><h3>GPT接続設定・接続テスト（管理者用）</h3>
+<p>管理画面からOpenAI APIへ接続して解析します。ChatGPTの月額契約とは別のAPI利用です。APIキーの登録や接続テストだけでは、資料を送信しません。Geminiには送信しません。</p>
+<p><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI APIキーを取得する</a></p>
+<label for="req-ai-key">OpenAI APIキー（保存済みのキーを表示します）</label><input id="req-ai-key" type="text" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="515">
+<label for="req-ai-model">GPTモデルID</label><input id="req-ai-model" value="gpt-6.1-terra" maxlength="85">
+<button id="req-ai-save" type="button">保存してGPT接続テスト</button><p id="req-ai-settings-status" role="status"></p>
+<p>APIキーはチャットやGitHubには保存せず、GASのスクリプトプロパティへ保存します。保存済みのキーは管理者画面に表示されます。既存のGemini設定は使用しません。</p>
+<p>解析は1資料15 MBまで。図形・画像を含むWordやExcelは確認用PDFも登録してください。Excelのプルダウンや複雑な条件は必ず管理者が原本と照合してください。</p>
+<h2>資料から必要項目を作成</h2>
 <p>登録した資料を選び、送信確認にチェックして、項目作成ボタンを押してください。</p>
 <div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
 <label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
 <button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
 <label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をOpenAI APIへ送信してGPTで解析します。API利用料が発生する場合があることを確認しました</label>
 <button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
-<p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p><button id="req-connection-test" type="button">GPT接続テスト（資料は送信しません）</button>
+<p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p>
 <p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
 <h3 style="margin-top:24px">作成した項目の確認・編集</h3>
@@ -19,14 +27,6 @@
 <label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
 <label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
 <button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
-<h3>GPT接続設定（管理者用）</h3>
-<p>管理画面からOpenAI APIへ接続して解析します。ChatGPTの月額契約とは別のAPI利用です。APIキーの登録や接続テストだけでは、資料を送信しません。Geminiには送信しません。</p>
-<p><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI APIキーを取得する</a></p>
-<label for="req-ai-key">OpenAI APIキー（登録済みのキーは表示しません。変更しない場合は空欄）</label><input id="req-ai-key" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="515">
-<label for="req-ai-model">GPTモデルID</label><input id="req-ai-model" value="gpt-6.1-terra" maxlength="85">
-<button id="req-ai-save" type="button">GPT接続設定を保存</button><p id="req-ai-settings-status" role="status"></p>
-<p>APIキーはチャットやGitHubには保存せず、GASのスクリプトプロパティへ保存します。保存後は入力欄から消去します。既存のGemini設定は使用しません。</p>
-<p>解析は1資料15 MBまで。図形・画像を含むWordやExcelは確認用PDFも登録してください。Excelのプルダウンや複雑な条件は必ず管理者が原本と照合してください。</p>
 </section>
 <script>
 (()=>{
@@ -94,13 +94,12 @@ $('req-analyze').onclick=()=>run(async()=>{
   throw error;
  }finally{if(timer)clearInterval(timer);}
 });
-$('req-connection-test').onclick=()=>run(async()=>{ $('req-analysis').textContent='AI接続を確認中…';try{const result=await rpc('authorizeGrantAiConnection');$('req-analysis').textContent=result.message;}catch(error){$('req-analysis').textContent='AI接続テスト：'+error.message;throw error;}});
 $('req-save').onclick=()=>run(async()=>{draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;status('下書き保存済み：第'+draft.revision+'版');});
 $('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
 $('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
 function showGptSettings(r){$('req-ai-model').value=r.model||'gpt-6.1-terra';$('req-analysis').textContent=r.configured?'GPT接続設定あり。資料を選択して解析できます。':'GPT接続は未設定です。下の「GPT接続設定」でOpenAI APIキーを保存してください。';}
-$('req-ai-save').onclick=()=>run(async()=>{const input={key:$('req-ai-key').value,model:$('req-ai-model').value};$('req-ai-key').value='';$('req-ai-settings-status').textContent='保存中…';try{const result=await rpc('saveOpenAiRequirementSettings',input);showGptSettings(result);$('req-ai-settings-status').textContent='GPT接続設定を保存しました。接続テストを実行してください。';}catch(error){$('req-ai-settings-status').textContent=error.message;throw error;}});
-rpc('getRequirementAiStatus').then(showGptSettings).catch(e=>status(e.message));
+$('req-ai-save').onclick=()=>run(async()=>{const input={key:$('req-ai-key').value,model:$('req-ai-model').value};$('req-ai-settings-status').textContent='保存中…';try{const result=await rpc('saveOpenAiRequirementSettings',input);showGptSettings(result);$('req-ai-settings-status').textContent='保存しました。GPT接続を確認中…';const test=await rpc('authorizeGrantAiConnection');$('req-ai-settings-status').textContent=test.message;}catch(error){$('req-ai-settings-status').textContent=error.message;throw error;}});
+rpc('getOpenAiRequirementSettings').then(r=>{showGptSettings(r);$('req-ai-key').value=r.key||'';}).catch(e=>status(e.message));
 rpc('getGrantAiAuthorization').then(r=>{if(r.required){const link=$('req-auth-link');link.href=r.url;link.hidden=false;}}).catch(e=>status(e.message));
 refresh().catch(e=>status(e.message));
 })();
