@@ -96,3 +96,12 @@ test('drop handler accepts mixed files, adds later drops, and rejects oversized 
   assert(nodes.get('material-upload-status').textContent.includes('選択済み'));
   assert(nodes.get('material-upload-status').textContent.includes('サイズ'));
 });
+
+test('material removal keeps original and indices; append retries do not duplicate slots',()=>{
+ const {ctx,files}=harness();ctx.beginGrantMaterialBatch(input());upload(ctx,0);ctx.completeGrantMaterialBatch(batchId);
+ const original=ctx.materialBatch_(batchId).manifest.files[0].fileId;
+ ctx.removeGrantMaterialFile({id:batchId,index:0});assert.equal(ctx.listGrantMaterialBatches()[0].files.length,0);assert.equal(files.get(original).isTrashed(),false);
+ const data={...input(),requestId:'22222222-2222-2222-2222-222222222222',batchId};
+ assert.equal(ctx.appendGrantMaterialFiles(data).offset,1);assert.equal(ctx.appendGrantMaterialFiles(data).offset,1);assert.equal(ctx.materialBatch_(batchId).manifest.files.length,2);
+ upload(ctx,1);ctx.completeGrantMaterialBatch(batchId);const visible=ctx.listGrantMaterialBatches()[0].files;assert.equal(visible.length,1);assert.equal(visible[0].index,1);assert.throws(()=>upload(ctx,0));
+});
