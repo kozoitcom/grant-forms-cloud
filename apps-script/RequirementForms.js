@@ -16,7 +16,7 @@ function requirementFields_(fields) {
   const ids=new Set();
   const result=fields.map(f=>{
     const id=String(f.id||''),label=String(f.label||'').trim(),type=String(f.type||'text');
-    if(!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(id)||ids.has(id)||!label||label.length>160||!['text','textarea','number','date','email','select','checkbox','file'].includes(type))throw new Error('項目ID・項目名・入力形式を確認してください。');
+    if(!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(id)||ids.has(id)||!label||label.length>160||!['text','textarea','number','date','email','select','checkbox','file','file_word'].includes(type))throw new Error('項目ID・項目名・入力形式を確認してください。');
     ids.add(id);
     const options=Array.isArray(f.options)?f.options.map(String):[];
     if(options.length>100||options.some(x=>!x||x.length>180)||new Set(options).size!==options.length||(type==='select'&&!options.length))throw new Error('選択肢を重複なく入力してください。');
@@ -89,7 +89,7 @@ function getRequirementApplicantState(token){
 }
 function requirementAnswers_(fields,raw){
   const out={},active=f=>f.enabled&&(!f.condition||String(raw[f.condition.field]??'')===f.condition.equals);
-  for(const f of fields){if(!active(f)||f.type==='file')continue;const v=String(raw[f.id]??'').trim();if(v.length>4000)throw new Error(f.label+'が長すぎます。');
+  for(const f of fields){if(!active(f)||['file','file_word'].includes(f.type))continue;const v=String(raw[f.id]??'').trim();if(v.length>4000)throw new Error(f.label+'が長すぎます。');
     if(f.required&&!v)throw new Error(f.label+'を入力してください。');
     if(v&&f.type==='number'&&!Number.isFinite(Number(v)))throw new Error(f.label+'を数値で入力してください。');
     if(v&&f.type==='date'&&(!/^\d{4}-\d{2}-\d{2}$/.test(v)||isNaN(Date.parse(v))||new Date(v).toISOString().slice(0,10)!==v))throw new Error(f.label+'の日付を確認してください。');
@@ -104,7 +104,7 @@ function saveRequirementAnswerDraft(input){
   if(!invite.grant.startsWith('schema:')||invite.receipt)throw new Error('このリンクは編集できません。');
   const snapshot=resolveRequirementSnapshot_(invite);
   if(snapshot.revision!==Number(input.revision))throw new Error('項目が更新されました。画面を再読み込みしてください。入力済みの保存内容は引き継ぎます。');
-  const answers={};for(const f of snapshot.fields){if(f.type==='file')continue;const v=String(input.answers?.[f.id]??'');if(v.length>4000)throw new Error('入力内容が長すぎます。');answers[f.id]=v;}
+  const answers={};for(const f of snapshot.fields){if(['file','file_word'].includes(f.type))continue;const v=String(input.answers?.[f.id]??'');if(v.length>4000)throw new Error('入力内容が長すぎます。');answers[f.id]=v;}
   const lock=LockService.getScriptLock();lock.waitLock(20000);
   try{const latest=readGrantInvitation_(token);if(latest.receipt)throw new Error('提出済みです。');if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
     const file=latest.answerDraftId?DriveApp.getFileById(latest.answerDraftId):null;
@@ -121,18 +121,28 @@ function submitRequirementApplication(form){
   const answers=requirementAnswers_(snapshot.fields,raw),uploads=[];
   if(answers.company && answers.company!==invite.company || answers.email && answers.email.toLowerCase()!==invite.email.toLowerCase())throw new Error('案内先の会社名・メールアドレスと一致しません。');
   let total=0;
-  for(const f of snapshot.fields){if(!f.enabled||f.type!=='file'||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id];if(!blob||!blob.getName?.()){if(f.required)throw new Error(f.label+'を添付してください。');continue;}const bytes=blob.getBytes();total+=bytes.length;if(bytes.slice(0,5).join(',')!=='37,80,68,70,45'||total>20*1024*1024)throw new Error('添付は合計20 MB以内のPDFにしてください。');uploads.push({f,blob});}
+  for(const f of snapshot.fields){if(!f.enabled||!['file','file_word'].includes(f.type)||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id];if(!blob||!blob.getName?.()){if(f.required)throw new Error(f.label+'を添付してください。');continue;}const bytes=blob.getBytes();total+=bytes.length;if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');const ext=requirementUploadExtension_(f,blob,bytes);uploads.push({f,blob,ext});}
   const lock=LockService.getScriptLock();lock.waitLock(20000);let folder;
   try{const latest=readGrantInvitation_(String(form.inviteToken));if(latest.receipt)return {receipt:latest.receipt};if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
     const receipt=Utilities.getUuid(),submittedAt=new Date().toISOString(),p=PropertiesService.getScriptProperties(),dest=p.getProperty('GRANT_SUBMISSION_FOLDER_ID');
     folder=(dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(invite.company+' - '+snapshot.title+' - '+receipt);
-    uploads.forEach(({f,blob})=>folder.createFile(blob.setName(f.label.replace(/[\\/]/g,'_')+'.pdf')));
+    uploads.forEach(({f,blob,ext})=>folder.createFile(blob.setName(f.label.replace(/[\\/]/g,'_')+'.'+ext)));
     const historicalAnswers=latest.answerDraftId?JSON.parse(DriveApp.getFileById(latest.answerDraftId).getBlob().getDataAsString('UTF-8')).answers:{};
     const record={historicalAnswers,schemaVersion:2,receipt,grant:invite.grant,company:invite.company,submittedAt,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderUrl:folder.getUrl()};
     const file=folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);
     latest.receipt=receipt;latest.folderUrl=folder.getUrl();writeGrantInvitation_(String(form.inviteToken),latest);
     p.setProperty('REQUIREMENT_RESPONSE_'+receipt,file.getId());return {receipt};
   }finally{lock.releaseLock();}
+}
+function requirementUploadExtension_(f,blob,bytes){
+ const signature=bytes.map(x=>x&255);
+ if(f.type==='file'){if(signature.slice(0,5).join(',')!=='37,80,68,70,45')throw new Error(f.label+'はPDFを添付してください。');return 'pdf';}
+ const name=blob.getName();
+ if(/\.doc$/i.test(name)&&signature.slice(0,8).join(',')==='208,207,17,224,161,177,26,225')return 'doc';
+ if(/\.docx$/i.test(name)&&signature[0]===80&&signature[1]===75){
+  try{const files=Utilities.unzip(blob.copyBlob().setContentType('application/zip')).map(x=>x.getName());if(files.includes('[Content_Types].xml')&&files.includes('word/document.xml'))return 'docx';}catch(_){}
+ }
+ throw new Error(f.label+'はWord（.docx・.doc）を添付してください。');
 }
 function requirementResponses_(){const p=PropertiesService.getScriptProperties().getProperties();return Object.entries(p).filter(([k])=>k.startsWith('REQUIREMENT_RESPONSE_')).map(([,id])=>JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8')));}
 /** OpenAI adapter. Keys never leave server-side ScriptProperties. */
@@ -154,7 +164,7 @@ function openAiRequirementConfig_(){
 }
 function openAiRequirementSchema_(){
  const str={type:'string'};
- const properties={id:str,label:str,type:{type:'string',enum:['text','textarea','number','date','email','select','checkbox','file']},required:{type:'boolean'},enabled:{type:'boolean'},options:{type:'array',items:str},help:str,source:str,target:str,condition:{anyOf:[{type:'null'},{type:'object',additionalProperties:false,properties:{field:str,equals:str},required:['field','equals']}]}};
+ const properties={id:str,label:str,type:{type:'string',enum:['text','textarea','number','date','email','select','checkbox','file','file_word']},required:{type:'boolean'},enabled:{type:'boolean'},options:{type:'array',items:str},help:str,source:str,target:str,condition:{anyOf:[{type:'null'},{type:'object',additionalProperties:false,properties:{field:str,equals:str},required:['field','equals']}]}};
  return {type:'object',additionalProperties:false,properties:{fields:{type:'array',items:{type:'object',additionalProperties:false,properties,required:Object.keys(properties)}},warnings:{type:'array',items:str}},required:['fields','warnings']};
 }
 function openAiRequirementPayload_(item,blob,model){
