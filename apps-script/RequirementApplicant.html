@@ -3,9 +3,9 @@
 const bootstrap=<?!= initial ?>;
 function start(initial){let draftTimer;const form=document.getElementById('answers'),controls=new Map();document.getElementById('title').textContent=initial.snapshot.year+' '+initial.snapshot.title;document.getElementById('mode').textContent=initial.preview?'管理者プレビュー（送信できません）':'第'+initial.snapshot.revision+'版';form.elements.inviteToken.value=initial.token;form.elements.revision.value=initial.snapshot.revision;
 for(const f of initial.snapshot.fields.filter(x=>x.enabled)){
- const wrap=document.createElement('div'),label=document.createElement('label');label.textContent=f.label+(f.required?'（必須）':'');label.htmlFor='f_'+f.id;const el=document.createElement(f.type==='textarea'?'textarea':f.type==='select'?'select':'input');el.id='f_'+f.id;el.name=f.type==='file'?'upload_'+f.id:'answer_'+f.id;
- if(f.type==='select'){el.add(new Option('選択してください',''));f.options.forEach(v=>el.add(new Option(v,v)));}else if(f.type!=='textarea')el.type=f.type==='file'?'file':f.type==='checkbox'?'checkbox':f.type;
- if(f.type==='file')el.accept='.pdf';else if(f.type==='checkbox'){el.style.width='auto';el.checked=initial.values[f.id]==='true';}else el.value=initial.values[f.id]??'';
+ const wrap=document.createElement('div'),label=document.createElement('label');label.textContent=f.label+(f.required?'（必須）':'');label.htmlFor='f_'+f.id;const el=document.createElement(f.type==='textarea'?'textarea':f.type==='select'?'select':'input');el.id='f_'+f.id;el.name=['file','file_word'].includes(f.type)?'upload_'+f.id:'answer_'+f.id;
+ if(f.type==='select'){el.add(new Option('選択してください',''));f.options.forEach(v=>el.add(new Option(v,v)));}else if(f.type!=='textarea')el.type=['file','file_word'].includes(f.type)?'file':f.type==='checkbox'?'checkbox':f.type;
+ if(['file','file_word'].includes(f.type))el.accept=f.type==='file_word'?'.docx,.doc':'.pdf';else if(f.type==='checkbox'){el.style.width='auto';el.checked=initial.values[f.id]==='true';}else el.value=initial.values[f.id]??'';
  if(['text','textarea','email'].includes(f.type))el.maxLength=4000;
  if(!initial.preview&&['company','email'].includes(f.id))el.readOnly=true;
  const help=document.createElement('p');help.className='help';help.textContent=f.help;wrap.append(label,el,help);document.getElementById('fields').append(wrap);controls.set(f.id,{f,el,wrap});el.addEventListener('change',()=>{update();queueDraft();});el.addEventListener('input',()=>{update();queueDraft();});
