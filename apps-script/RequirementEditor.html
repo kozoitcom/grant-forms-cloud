@@ -20,7 +20,7 @@
 <p>新しく作る場合は、上の①②③から始めてください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
 <label>保存済みの項目<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">保存した項目を読み込む</button>
 <label>助成金名<input id="req-title" maxlength="180"></label><label>年度<input id="req-year" maxlength="32"></label>
-<p>同じID・同じ項目名は候補として表示します。「統合」で根拠・転記先をまとめるか、「別項目として追加」を選んでください。AIの解析だけで公開せず、全資料と照合してください。</p><div id="req-candidates"></div>
+<p>同じID・同じ項目名は候補として表示します。「統合」で根拠・転記先をまとめるか、「別項目として追加」を選んでください。AIの解析だけで公開せず、全資料と照合してください。</p><button id="req-apply-candidates" type="button" hidden>解析候補をまとめて反映</button><div id="req-candidates"></div>
 <div id="req-fields"></div><button id="req-add" type="button">項目を追加</button><button id="req-save" type="button">項目を保存</button>
 <h3>申請者画面の確認</h3><button id="req-preview" type="button">保存済みの下書きをプレビュー</button><a id="req-preview-link" target="_blank" rel="noopener noreferrer" hidden>申請者画面を開く</a>
 <h3>公開・変更の反映先</h3><label>反映先<select id="req-scope"><option value="future">今後発行する会社リンクだけ</option><option value="pending">今後のリンクと既存の未提出会社</option><option value="company">特定の未提出会社だけ</option></select></label>
@@ -55,11 +55,13 @@ function render(){const root=$('req-fields');root.replaceChildren();draft.fields
 });}
 function freshId(){return 'field_'+crypto.randomUUID().replace(/-/g,'').slice(0,16);}
 function add(f){const copy=structuredClone(f);if(draft.fields.some(x=>x.id===copy.id))copy.id=freshId();draft.fields.push(copy);edited();render();}
-function renderCandidates(){$('req-candidates').replaceChildren();candidates.forEach((f,i)=>{const box=document.createElement('fieldset'),text=document.createElement('p');text.textContent='候補：'+f.label+' ／ '+f.source;box.append(text);const match=draft.fields.find(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'));
- if(match){const merge=document.createElement('button');merge.type='button';merge.textContent='既存「'+match.label+'」に根拠・転記先を統合';merge.onclick=()=>{for(const k of ['source','target'])match[k]=[...new Set([match[k],f[k]].filter(Boolean))].join('\n');candidates.splice(i,1);edited();render();renderCandidates();};box.append(merge);}
+function applyCandidate(f){const i=draft.fields.findIndex(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'));if(i<0){add(f);return;}const old=draft.fields[i];draft.fields[i]={...f,id:old.id,enabled:old.enabled,stages:old.stages||['application']};edited();render();}
+$('req-apply-candidates').onclick=()=>{if(busy)return;for(const f of candidates)applyCandidate(f);candidates=[];renderCandidates();status('解析候補を項目に反映しました。「項目を保存」を押してください。');};
+function renderCandidates(){$('req-apply-candidates').hidden=!candidates.length;$('req-candidates').replaceChildren();candidates.forEach((f,i)=>{const box=document.createElement('fieldset'),text=document.createElement('p');text.textContent='候補：'+f.label+' ／ '+f.source;box.append(text);const match=draft.fields.find(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'));
+ if(match){const update=document.createElement('button');update.type='button';update.textContent='新しい解析内容で既存項目を更新';update.onclick=()=>{applyCandidate(f);candidates.splice(i,1);renderCandidates();};box.append(update);const merge=document.createElement('button');merge.type='button';merge.textContent='既存「'+match.label+'」に根拠・転記先を統合';merge.onclick=()=>{for(const k of ['source','target'])match[k]=[...new Set([match[k],f[k]].filter(Boolean))].join('\n');candidates.splice(i,1);edited();render();renderCandidates();};box.append(merge);}
  for(const [title,action] of [['別項目として追加',()=>add(f)],['採用しない',()=>{}]]){const b=document.createElement('button');b.type='button';b.textContent=title;b.onclick=()=>{action();candidates.splice(i,1);renderCandidates();};box.append(b);}$('req-candidates').append(box);});}
-async function refresh(){const [defs,bs,invites]=await Promise.all([rpc('listRequirementForms'),rpc('listGrantMaterialBatches'),rpc('listGrantInvitations')]);batches=bs.filter(x=>x.state==='completed');const old=$('req-def').value;$('req-def').replaceChildren(new Option('新しく作成',''));defs.forEach(d=>$('req-def').add(new Option(d.year+' '+d.title+(d.published?'（公開済み）':'（下書き）'),d.id)));$('req-def').value=old;
- $('req-batch').replaceChildren(new Option('資料を選択',''));batches.forEach(b=>$('req-batch').add(new Option(b.year+' '+b.title+' / '+b.files.length+'件',b.id)));
+async function refresh(){const [defs,bs,invites]=await Promise.all([rpc('listRequirementForms'),rpc('listGrantMaterialBatches'),rpc('listGrantInvitations')]);batches=bs.filter(x=>x.state==='completed');const old=draft.id||$('req-def').value,oldBatch=$('req-batch').value;$('req-def').replaceChildren(new Option('新しく作成',''));defs.forEach(d=>$('req-def').add(new Option(d.year+' '+d.title+(d.published?'（公開済み）':'（下書き）'),d.id)));$('req-def').value=old;
+ $('req-batch').replaceChildren(new Option('資料を選択',''));batches.forEach(b=>$('req-batch').add(new Option(b.year+' '+b.title+' / '+b.files.length+'件',b.id)));$('req-batch').value=oldBatch;
  $('req-company').replaceChildren(new Option('会社リンクを選択',''));invites.filter(i=>!i.receipt&&!i.deletedAt&&i.grant==='schema:'+draft.id&&Date.now()<i.expiresAt).forEach(i=>$('req-company').add(new Option(i.company+' / '+i.email,i.historyId)));
 }
 async function run(fn){if(busy)return;busy=true;document.querySelectorAll('#req-fields input,#req-fields select,#req-fields textarea,[id^="req-"]').forEach(e=>{if(e.tagName==='BUTTON')e.disabled=true;});try{await fn();}catch(e){status(e.message);}finally{busy=false;document.querySelectorAll('button[id^="req-"]').forEach(e=>e.disabled=false);}}
@@ -78,6 +80,8 @@ $('req-analyze').onclick=()=>run(async()=>{
   const connection=await rpc('getRequirementAiStatus');
   if(!connection.configured)throw Error('GPT接続が未設定のため解析は開始していません。下の「GPT接続設定」でOpenAI APIキーを保存してください。GeminiのAPIキーは使えません。');
   if(!draft.batchIds.includes(b.id)){draft.batchIds.push(b.id);edited();}
+  let addedCount=0,candidateCount=0,processedCount=0;
+  $('req-ai-warnings').textContent='';
   for(let i=0;i<b.files.length;i++){
    const materialIndex=b.files[i].index??i;const key=b.id+':'+materialIndex;if(analyzed.has(key))continue;
    const started=Date.now();
@@ -85,18 +89,19 @@ $('req-analyze').onclick=()=>run(async()=>{
    progress();timer=setInterval(progress,1000);
    const result=await rpc('analyzeRequirementMaterial',{batchId:b.id,index:materialIndex,consent:true,provider:'openai'});
    clearInterval(timer);timer=null;
-   for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC')))candidates.push(f);else add(f);}
+   processedCount++;
+   for(const f of result.fields){if(draft.fields.some(x=>x.id===f.id||x.label.normalize('NFKC')===f.label.normalize('NFKC'))){candidates.push(f);candidateCount++;}else{add(f);addedCount++;}}
    if(result.warnings?.length)$('req-ai-warnings').textContent += result.name+'：\n'+result.warnings.join('\n')+'\n';
    analyzed.add(key);renderCandidates();
   }
-  $('req-analysis').textContent='選択資料の解析が完了しました。下の項目と候補を確認し、下書きを保存してください。';
+  $('req-analysis').textContent=processedCount?'解析完了：新規 '+addedCount+'項目、既存項目と重複する候補 '+candidateCount+'件。'+(candidateCount?'下の「解析候補をまとめて反映」または候補ごとの更新を選び、その後「項目を保存」を押してください。':'「項目を保存」を押してください。'):'この画面では選択資料をすでに解析済みです。追加資料がある場合は資料一覧を更新してください。';
   status('解析が完了しました。項目を確認してから公開してください。');
  }catch(error){
   $('req-analysis').textContent='解析を停止しました：'+(error.message||'通信に失敗しました。')+' 完了済みの項目は画面に残っています。';
   throw error;
  }finally{if(timer)clearInterval(timer);}
 });
-$('req-save').onclick=()=>run(async()=>{draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;$('req-save-state').textContent='項目を保存しました（第'+draft.revision+'版）。画面を閉じても残ります。';status('項目を保存しました：第'+draft.revision+'版');});
+$('req-save').onclick=()=>run(async()=>{if(candidates.length)throw Error('未反映の解析候補が'+candidates.length+'件あります。「解析候補をまとめて反映」または候補ごとの操作を選んでから保存してください。');draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;$('req-save-state').textContent='項目を保存しました（第'+draft.revision+'版）。画面を閉じても残ります。';status('項目を保存しました：第'+draft.revision+'版');});
 $('req-save-top').onclick=()=> $('req-save').onclick();
 $('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
 $('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
