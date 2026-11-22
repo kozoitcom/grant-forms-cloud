@@ -38,3 +38,5 @@ test('Word submission validates document format and preserves extensions',()=>{
  assert.throws(()=>ctx.requirementUploadExtension_(field({type:'file'}),blob('test.docx'),[80,75,3,4]));
  assert.equal(ctx.requirementUploadExtension_(field({type:'file'}),blob('test.pdf'),[37,80,68,70,45]),'pdf');
 });
+
+test('field stages persist multiple selections, allow empty selection and default older fields',()=>{const {ctx}=harness();assert.equal(ctx.requirementFields_([field()])[0].stages.join(','),'application');assert.equal(ctx.requirementFields_([field({stages:['application','results']})])[0].stages.join(','),'application,results');assert.equal(ctx.requirementFields_([field({stages:[]})])[0].stages.length,0);assert.throws(()=>ctx.requirementFields_([field({stages:['unknown']})]));let d=ctx.saveRequirementForm({title:'test',year:'R8',fields:[field({stages:['implementation','results']})],batchIds:[]});assert.equal(ctx.getRequirementForm(d.id).fields[0].stages.join(','),'implementation,results');});
