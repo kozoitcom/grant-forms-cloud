@@ -40,3 +40,14 @@ test('Word submission validates document format and preserves extensions',()=>{
 });
 
 test('field stages persist multiple selections, allow empty selection and default older fields',()=>{const {ctx}=harness();assert.equal(ctx.requirementFields_([field()])[0].stages.join(','),'application');assert.equal(ctx.requirementFields_([field({stages:['application','results']})])[0].stages.join(','),'application,results');assert.equal(ctx.requirementFields_([field({stages:[]})])[0].stages.length,0);assert.throws(()=>ctx.requirementFields_([field({stages:['unknown']})]));let d=ctx.saveRequirementForm({title:'test',year:'R8',fields:[field({stages:['implementation','results']})],batchIds:[]});assert.equal(ctx.getRequirementForm(d.id).fields[0].stages.join(','),'implementation,results');});
+
+test('preview layout saves order and reversible removal without publishing, rejects stale or incomplete changes',()=>{
+ const {ctx}=harness();const d=ctx.saveRequirementForm({title:'test',year:'R8',fields:[field(),field({id:'address',label:'住所'})],batchIds:[]});
+ ctx.publishRequirementForm({id:d.id,revision:1,scope:'future'});
+ const input={id:d.id,revision:1,order:['address','company'],disabled:['company']};
+ assert.equal(ctx.saveRequirementPreviewLayout(input).revision,2);
+ const saved=ctx.getRequirementForm(d.id);assert.equal(saved.fields[0].id,'address');assert.equal(saved.fields[1].enabled,false);assert.equal(saved.published.fields[0].id,'company');assert.equal(saved.published.fields[0].enabled,true);
+ assert.throws(()=>ctx.saveRequirementPreviewLayout(input));
+ assert.throws(()=>ctx.saveRequirementPreviewLayout({...input,revision:2,order:['company']}));
+ ctx.saveRequirementPreviewLayout({...input,revision:2,disabled:[]});assert.equal(ctx.getRequirementForm(d.id).fields[1].enabled,true);
+});
