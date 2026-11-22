@@ -21,7 +21,8 @@ function requirementFields_(fields) {
     const options=Array.isArray(f.options)?f.options.map(String):[];
     if(options.length>100||options.some(x=>!x||x.length>180)||new Set(options).size!==options.length||(type==='select'&&!options.length))throw new Error('選択肢を重複なく入力してください。');
     const condition=f.condition?{field:String(f.condition.field||''),equals:String(f.condition.equals??'')}:null;
-    return {id,label,type,options,required:!!f.required,enabled:f.enabled!==false,help:String(f.help||'').slice(0,1000),source:String(f.source||'').slice(0,1000),target:String(f.target||'').slice(0,1000),condition};
+    const stages=f.stages===undefined?['application']:f.stages;if(!Array.isArray(stages)||stages.some(s=>!['application','implementation','results'].includes(s)))throw new Error('申請・取組・実績の選択を確認してください。');
+    return {id,label,type,options,stages:[...new Set(stages)],required:!!f.required,enabled:f.enabled!==false,help:String(f.help||'').slice(0,1000),source:String(f.source||'').slice(0,1000),target:String(f.target||'').slice(0,1000),condition};
   });
   for(const f of result)if(f.condition&&(!ids.has(f.condition.field)||f.condition.field===f.id||result.find(x=>x.id===f.condition.field)?.condition))throw new Error('表示条件は条件を持たない別の項目を指定してください。');
   return result;
