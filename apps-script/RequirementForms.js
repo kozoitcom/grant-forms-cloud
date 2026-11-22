@@ -137,6 +137,7 @@ function submitRequirementApplication(form){
 function requirementResponses_(){const p=PropertiesService.getScriptProperties().getProperties();return Object.entries(p).filter(([k])=>k.startsWith('REQUIREMENT_RESPONSE_')).map(([,id])=>JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8')));}
 /** OpenAI adapter. Keys never leave server-side ScriptProperties. */
 function getRequirementAiStatus(){requireGrantAdmin_();const c=openAiRequirementConfig_();return {provider:'openai',configured:!!c.key,model:c.model};}
+function getOpenAiRequirementSettings(){requireGrantAdmin_();const c=openAiRequirementConfig_();return {provider:'openai',configured:!!c.key,model:c.model,key:c.key};}
 function saveOpenAiRequirementSettings(input){
  requireGrantAdmin_();
  const key=String(input?.key||'').trim(),model=String(input?.model||'gpt-6.1-terra').trim();
