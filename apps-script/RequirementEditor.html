@@ -6,7 +6,7 @@
 <label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をOpenAI APIへ送信してGPTで解析します。API利用料が発生する場合があることを確認しました</label>
 <button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
 <p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p><button id="req-connection-test" type="button">GPT接続テスト（資料は送信しません）</button>
-<p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は「使用する」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
+<p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
 <h3 style="margin-top:24px">作成した項目の確認・編集</h3>
 <p>新しく作る場合は、上の①②③から始めてください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
@@ -37,14 +37,19 @@ function edited(){dirty=true;$('req-reviewed').checked=false;$('req-preview-link
 function control(tag,value,onchange){const e=document.createElement(tag);e.value=value||'';e.oninput=()=>{onchange(e.value);edited();};return e;}
 function label(parent,title,el){const l=document.createElement('label');l.append(title,el);parent.append(l);}
 function render(){const root=$('req-fields');root.replaceChildren();draft.fields.forEach((f,i)=>{
- const box=document.createElement('fieldset');box.style.cssText='margin:16px 0;padding:16px;min-width:0';const legend=document.createElement('legend');legend.textContent=(i+1)+'. '+f.label+(f.enabled?'':'（使用しない）');box.append(legend);
- label(box,'項目名',control('input',f.label,v=>f.label=v));label(box,'項目ID（公開後は変更しない）',control('input',f.id,v=>f.id=v));
+ const row=document.createElement('div');row.style.cssText='margin:8px 0;padding:12px;border:1px solid #cbd5dc;border-radius:6px;display:flex;align-items:flex-start;gap:12px';
+ const useLabel=document.createElement('label');useLabel.style.cssText='display:flex;align-items:center;gap:6px;white-space:nowrap;margin:0';
+ const use=document.createElement('input');use.type='checkbox';use.style.cssText='width:auto;margin:0';use.checked=!!f.enabled;use.setAttribute('aria-label',f.label+'を必要項目にする');
+ const useText=document.createElement('span');const updateUse=()=>{useText.textContent=use.checked?'必要':'不要';};updateUse();use.onchange=()=>{f.enabled=use.checked;updateUse();edited();};useLabel.append(use,useText);row.append(useLabel);
+ const details=document.createElement('details');details.style.cssText='flex:1;min-width:0';const summary=document.createElement('summary');summary.style.cssText='cursor:pointer;font-weight:600';const heading=document.createElement('span');heading.textContent=(i+1)+'. '+f.label;summary.append(heading);details.append(summary);
+ const box=document.createElement('div');box.style.cssText='padding-top:16px';details.append(box);row.append(details);
+ label(box,'項目名',control('input',f.label,v=>{f.label=v;heading.textContent=(i+1)+'. '+v;use.setAttribute('aria-label',v+'を必要項目にする');}));label(box,'項目ID（公開後は変更しない）',control('input',f.id,v=>f.id=v));
  const type=document.createElement('select');for(const [v,t] of Object.entries({text:'短い文章',textarea:'長い文章',number:'数値',date:'日付',email:'メール',select:'プルダウン',checkbox:'同意チェック',file:'提出PDF'}))type.add(new Option(t,v));type.value=f.type;type.onchange=()=>{f.type=type.value;edited();};label(box,'入力形式',type);
- for(const [key,title] of [['enabled','使用する（外すと申請者画面から非表示）'],['required','必須']]){const c=document.createElement('input');c.type='checkbox';c.style.width='auto';c.checked=f[key];c.onchange=()=>{f[key]=c.checked;edited();};label(box,title,c);}
+ for(const [key,title] of [['required','必須入力']]){const c=document.createElement('input');c.type='checkbox';c.style.width='auto';c.checked=f[key];c.onchange=()=>{f[key]=c.checked;edited();};label(box,title,c);}
  label(box,'説明',control('textarea',f.help,v=>f.help=v));label(box,'選択肢（1行に1つ）',control('textarea',(f.options||[]).join('\n'),v=>f.options=v.split('\n').map(s=>s.trim()).filter(Boolean)));
  label(box,'根拠の資料・ページ／シート・セル',control('textarea',f.source,v=>f.source=v));label(box,'転記する書類・位置',control('textarea',f.target,v=>f.target=v));
  label(box,'表示条件の項目ID（条件なしは空欄）',control('input',f.condition?.field,v=>{f.condition=v?{field:v,equals:f.condition?.equals||''}:null;}));
- label(box,'表示する回答値（チェック項目は true）',control('input',f.condition?.equals,v=>{if(f.condition)f.condition.equals=v;}));root.append(box);
+ label(box,'表示する回答値（チェック項目は true）',control('input',f.condition?.equals,v=>{if(f.condition)f.condition.equals=v;}));root.append(row);
 });}
 function freshId(){return 'field_'+crypto.randomUUID().replace(/-/g,'').slice(0,16);}
 function add(f){const copy=structuredClone(f);if(draft.fields.some(x=>x.id===copy.id))copy.id=freshId();draft.fields.push(copy);edited();render();}
