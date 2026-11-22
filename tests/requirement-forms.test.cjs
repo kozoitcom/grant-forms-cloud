@@ -51,3 +51,10 @@ test('preview layout saves order and reversible removal without publishing, reje
  assert.throws(()=>ctx.saveRequirementPreviewLayout({...input,revision:2,order:['company']}));
  ctx.saveRequirementPreviewLayout({...input,revision:2,disabled:[]});assert.equal(ctx.getRequirementForm(d.id).fields[1].enabled,true);
 });
+
+test('API-free basic workflow requires admin and completed materials and returns editable starting fields',()=>{
+ const {ctx}=harness();ctx.materialBatch_=()=>({manifest:{state:'completed',grant:'',files:[{role:'guidelines'},{role:'sample',documentTitle:'組織図'},{role:'blank',documentTitle:'組織図'},{role:'sample',documentTitle:'削除済み',deletedAt:'now'}]}});
+ const result=ctx.getBasicRequirementFields('batch');assert(result.fields.some(f=>f.id==='company'));assert.equal(result.fields.filter(f=>f.label==='組織図').length,1);assert(!result.fields.some(f=>f.label==='削除済み'));assert(result.message.includes('本文は解析していません'));
+ ctx.materialBatch_=()=>({manifest:{state:'uploading'}});assert.throws(()=>ctx.getBasicRequirementFields('batch'));
+ ctx.requireGrantAdmin_=()=>{throw Error('denied')};assert.throws(()=>ctx.getBasicRequirementFields('batch'),/denied/);
+});
