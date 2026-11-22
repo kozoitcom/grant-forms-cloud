@@ -58,3 +58,14 @@ test('API-free basic workflow requires admin and completed materials and returns
  ctx.materialBatch_=()=>({manifest:{state:'uploading'}});assert.throws(()=>ctx.getBasicRequirementFields('batch'));
  ctx.requireGrantAdmin_=()=>{throw Error('denied')};assert.throws(()=>ctx.getBasicRequirementFields('batch'),/denied/);
 });
+
+test('Excel submission accepts spreadsheets and rejects renamed Word documents',()=>{
+ const {ctx}=harness(),f=field({type:'file_excel'}),blob=name=>({getName:()=>name,copyBlob(){return this},setContentType(){return this}});
+ assert.equal(ctx.requirementFields_([f])[0].type,'file_excel');
+ ctx.Utilities.unzip=()=>['[Content_Types].xml','xl/workbook.xml'].map(name=>({getName:()=>name}));
+ assert.equal(ctx.requirementUploadExtension_(f,blob('test.xlsx'),[80,75,3,4]),'xlsx');
+ assert.equal(ctx.requirementUploadExtension_(f,blob('test.xls'),[208,207,17,224,161,177,26,225]),'xls');
+ ctx.Utilities.unzip=()=>['[Content_Types].xml','word/document.xml'].map(name=>({getName:()=>name}));
+ assert.throws(()=>ctx.requirementUploadExtension_(f,blob('renamed.xlsx'),[80,75,3,4]));
+ assert.throws(()=>ctx.requirementUploadExtension_(f,blob('test.doc'),[208,207,17,224,161,177,26,225]));
+});
