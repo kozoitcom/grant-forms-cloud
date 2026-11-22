@@ -1,4 +1,14 @@
-<section><h3>GPT接続設定・接続テスト（管理者用）</h3>
+<section><h2>資料から必要項目を作成</h2>
+<p>資料を選び、「API方式」または「基本項目方式」から項目を作成してください。</p>
+<div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
+<label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
+<button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
+<div role="tablist" aria-label="項目の作成方式" style="display:flex;gap:8px;margin:20px 0;flex-wrap:wrap">
+<button id="req-tab-api" type="button" role="tab" aria-selected="true" aria-controls="req-panel-api">API方式</button>
+<button id="req-tab-basic" type="button" role="tab" aria-selected="false" aria-controls="req-panel-basic" tabindex="-1">基本項目方式（API不要）</button>
+</div>
+<div id="req-panel-api" role="tabpanel" aria-labelledby="req-tab-api">
+<h3>GPT接続設定・接続テスト（管理者用）</h3>
 <p>管理画面からOpenAI APIへ接続して解析します。ChatGPTの月額契約とは別のAPI利用です。APIキーの登録や接続テストだけでは、資料を送信しません。Geminiには送信しません。</p>
 <p><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI APIキーを取得する</a></p>
 <label for="req-ai-key">OpenAI APIキー（保存済みのキーを表示します）</label><input id="req-ai-key" type="text" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="515">
@@ -6,18 +16,19 @@
 <button id="req-ai-save" type="button">保存してGPT接続テスト</button><p id="req-ai-settings-status" role="status"></p>
 <p>APIキーはチャットやGitHubには保存せず、GASのスクリプトプロパティへ保存します。保存済みのキーは管理者画面に表示されます。既存のGemini設定は使用しません。</p>
 <p>解析は1資料15 MBまで。図形・画像を含むWordやExcelは確認用PDFも登録してください。Excelのプルダウンや複雑な条件は必ず管理者が原本と照合してください。</p>
-<h2>資料から必要項目を作成</h2>
-<p>登録した資料を選び、送信確認にチェックして、項目作成ボタンを押してください。</p>
-<div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
-<label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
-<button type="button" id="req-batches-refresh">登録した資料が出ない場合は一覧を更新</button>
-<label style="margin-top:20px"><input id="req-consent" type="checkbox" style="width:auto"> ② 選択した資料をOpenAI APIへ送信してGPTで解析します。API利用料が発生する場合があることを確認しました</label>
-<p>作成方法を選択：以前の方式は基本項目・書類名から作成し、募集要項本文の自動解析は行いません。</p><button id="req-basic" type="button">以前の方式：基本項目を作成（API不要）</button><button id="req-analyze" type="button" style="display:block;margin-top:20px">③ GPTで必要項目を作成・追加</button>
-<p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p>
-<p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
+
+<label><input id="req-consent" type="checkbox" style="width:auto"> 選択した資料をOpenAI APIへ送信して解析することと、API利用料が発生する場合があることを確認しました</label>
+<button id="req-analyze" type="button">GPTで必要項目を作成・追加</button>
+<p><a id="req-auth-link" target="_blank" rel="noopener noreferrer" hidden>Googleで外部通信の権限を承認する（本人操作）</a></p>
+</div>
+<div id="req-panel-basic" role="tabpanel" aria-labelledby="req-tab-basic" hidden>
+<p>会社名・住所などの基本項目と、登録書類名から提出欄を作成します。APIは使用せず、募集要項本文の解析は行いません。必要項目・条件は資料と照合して編集してください。</p>
+<button id="req-basic" type="button">基本項目を作成</button>
+</div>
+<p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
 <h3 style="margin-top:24px">作成した項目の確認・編集</h3><button id="req-save-top" type="button">項目を保存</button><p id="req-save-state" role="status">保存すると、画面を閉じても項目が残ります。次回は保存済みの項目から選んで読み込めます。</p>
-<p>新しく作る場合は、上の①②③から始めてください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
+<p>新しく作る場合は、上で資料と作成方式を選んでください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
 <label>保存済みの項目<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">保存した項目を読み込む</button>
 <label>助成金名<input id="req-title" maxlength="180"></label><label>年度<input id="req-year" maxlength="32"></label>
 <p>同じID・同じ項目名は候補として表示します。「統合」で根拠・転記先をまとめるか、「別項目として追加」を選んでください。AIの解析だけで公開せず、全資料と照合してください。</p><button id="req-apply-candidates" type="button" hidden>解析候補をまとめて反映</button><div id="req-candidates"></div>
@@ -32,6 +43,9 @@
 (()=>{
 const $=id=>document.getElementById(id),rpc=(name,...args)=>new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no)[name](...args));
 let draft={id:'',revision:0,title:'',year:'',fields:[],batchIds:[]},batches=[],candidates=[],busy=false,dirty=false;
+function setCreationMode(mode){for(const name of ['api','basic']){const selected=name===mode,tab=$('req-tab-'+name);tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;tab.style.opacity=selected?'1':'0.6';$('req-panel-'+name).hidden=!selected;}}
+for(const name of ['api','basic']){$('req-tab-'+name).onclick=()=>setCreationMode(name);$('req-tab-'+name).onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?'api':e.key==='End'?'basic':name==='api'?'basic':'api';setCreationMode(next);$('req-tab-'+next).focus();}};}
+setCreationMode('api');
 const analyzed=new Set();const status=t=>{$('req-status').textContent=t;};
 function edited(){dirty=true;$('req-save-state').textContent='未保存の変更があります。「項目を保存」を押してください。';$('req-reviewed').checked=false;$('req-preview-link').hidden=true;}
 function control(tag,value,onchange){const e=document.createElement(tag);e.value=value||'';e.oninput=()=>{onchange(e.value);edited();};return e;}
