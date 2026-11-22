@@ -9,6 +9,7 @@ test('editing the same field after saving updates the newly returned draft objec
  const scriptRun={};Object.defineProperty(scriptRun,'run',{get:run});
  const ctx={document,google:{script:scriptRun},Option:function(text,value){this.text=text;this.value=value},crypto,structuredClone,Date,console,confirm:()=>true};vm.createContext(ctx);
  const html=fs.readFileSync(path.join(__dirname,'../apps-script/RequirementEditor.html'),'utf8');vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx);await new Promise(setImmediate);
+ assert.equal(nodes.get('req-panel-basic').hidden,true);nodes.get('req-tab-basic').onclick();assert.equal(nodes.get('req-panel-api').hidden,true);assert.equal(nodes.get('req-panel-basic').hidden,false);assert.equal(nodes.get('req-tab-basic')['aria-selected'],'true');nodes.get('req-tab-api').onclick();assert.equal(nodes.get('req-panel-basic').hidden,true);
  nodes.get('req-title').value='動作確認';nodes.get('req-year').value='令和8年度';nodes.get('req-add').onclick();await nodes.get('req-save').onclick();
  const row=nodes.get('req-fields').children[0];const details=row.children[1];assert.equal(details.tagName,'DETAILS');assert(!details.open);const labels=details.children[1].children;const control=title=>labels.find(x=>x.children?.[0]===title).children[1];
  const enabled=row.children[0].children[0];enabled.checked=false;enabled.onchange();assert.equal(row.children[0].children[1].textContent,'不要');
