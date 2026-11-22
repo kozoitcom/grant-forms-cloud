@@ -241,3 +241,13 @@ function saveRequirementPreviewLayout(input){
  const saved=saveRequirementForm({...current,fields});
  return {revision:saved.revision};
 }
+
+/** Fixed starting fields; does not read document contents or call an AI service. */
+function getBasicRequirementFields(batchId){
+ requireGrantAdmin_();const batch=materialBatch_(batchId).manifest;if(batch.state!=='completed')throw new Error('資料の保存を完了してください。');
+ const base=[['entryDate','記入日','date',false],['entity','事業者区分','select',true],['company','会社名・屋号','text',true],['industry','業種','text',true],['address','事業所所在地','text',true],['representative','代表者氏名','text',true],['representativeRole','代表者の役職','text',false],['representativeKana','代表者のふりがな','text',false],['person','担当者名','text',true],['email','メールアドレス','email',true],['phone','電話番号','text',false],['notes','備考','textarea',false]];
+ const fields=base.map(([id,label,type,required])=>({id,label,type,required,enabled:true,options:type==='select'?['法人','個人事業主']:[],stages:['application'],source:'基本項目テンプレート（資料本文は未解析）',help:'',target:'',condition:null}));
+ const docs=batch.grant==='women-r8'?WOMEN_R8_DOCUMENTS.map(([key,title])=>({key,title})):batch.files.filter(f=>!f.deletedAt&&f.role!=='guidelines').map((f,i)=>({key:String(i),title:f.documentTitle}));
+ const seen=new Set();for(const doc of docs){if(seen.has(doc.title))continue;seen.add(doc.title);fields.push({id:'document_'+fields.length,label:doc.title,type:'file',required:false,enabled:true,options:[],stages:['application'],source:'登録書類名・既存の書類一覧（資料本文は未解析）',help:'提出の要否・ファイル形式は管理者が募集要項と照合してください。',target:doc.title,condition:null});}
+ return {fields:requirementFields_(fields),message:'基本項目と書類名から項目案を作成しました。募集要項本文は解析していません。必須条件・不足項目を確認して保存してください。'};
+}
