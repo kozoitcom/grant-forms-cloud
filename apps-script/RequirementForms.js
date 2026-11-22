@@ -78,7 +78,7 @@ function requirementPage_(params){
   let invite=null,snapshot,values={};
   if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=readApplicantInvitationPrefill_(invite);if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);}
   else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt);}
-  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
+  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
   return p.evaluate().setTitle(snapshot.title+' | 申請フォーム').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
 function requirementDisplaySnapshot_(snapshot){return {revision:snapshot.revision,title:snapshot.title,year:snapshot.year,fields:snapshot.fields.map(({source,target,...f})=>f)};}
@@ -229,3 +229,15 @@ function requirementAiFetch_(url,options){
  }
 }
 
+
+/** Admin preview edits only ordering and inclusion; publication remains explicit. */
+function saveRequirementPreviewLayout(input){
+ requireGrantAdmin_();
+ const current=requirementRead_(input?.id);
+ if(current.revision!==Number(input.revision))throw new Error('別の画面で更新されています。プレビューを開き直してください。');
+ const order=input.order,disabled=input.disabled;
+ if(!Array.isArray(order)||!Array.isArray(disabled)||order.length!==current.fields.length||new Set(order).size!==order.length||order.some(id=>!current.fields.some(f=>f.id===id))||disabled.some(id=>!order.includes(id)))throw new Error('項目の構成を確認してください。');
+ const fields=order.map(id=>({...current.fields.find(f=>f.id===id),enabled:!disabled.includes(id)}));
+ const saved=saveRequirementForm({...current,fields});
+ return {revision:saved.revision};
+}
