@@ -29,3 +29,20 @@ test('missing AI settings and API failures replace the progress beside the analy
   const text=nodes.get('req-analysis').textContent;assert(text.startsWith('解析を停止しました：'));assert(!text.includes('解析中'));assert(text.includes(configured?'HTTP 429':'未設定'));assert.equal(analysisCalls,configured?1:0);assert.equal(timers.size,0);
  }
 });
+
+test('reanalysis candidates must be applied before saving and can update existing fields',async()=>{
+ const nodes=new Map();
+ const el=tag=>({tagName:tag.toUpperCase(),value:'',checked:false,style:{},children:[],setAttribute(k,v){this[k]=v},append(...x){this.children.push(...x)},replaceChildren(...x){this.children=x},add(x){this.children.push(x)}});
+ const document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,el('input'));return nodes.get(id)},createElement:el,querySelectorAll:()=>[]};
+ let saved=null;const calls=[];
+ const handlers={listRequirementForms:()=>saved?[saved]:[],listGrantMaterialBatches:()=>[{id:'batch',state:'completed',title:'test',year:'R8',files:[{index:3,name:'new.pdf'}]}],listGrantInvitations:()=>[],getRequirementAiStatus:()=>({configured:true}),analyzeRequirementMaterial:input=>{assert.equal(input.index,3);return {fields:[{...saved.fields[0],label:'新しい解析内容',help:'更新済み'}]}},saveRequirementForm:input=>{calls.push(structuredClone(input));saved={...structuredClone(input),id:'11111111-1111-1111-1111-111111111111',revision:input.revision+1};return structuredClone(saved)}};
+ const run=()=>{let ok,fail;return new Proxy({withSuccessHandler(fn){ok=fn;return this},withFailureHandler(fn){fail=fn;return this}},{get(target,name){if(name in target)return target[name];return (...args)=>Promise.resolve().then(()=>handlers[name](...args)).then(ok,fail)}})};
+ const scriptRun={};Object.defineProperty(scriptRun,'run',{get:run});
+ const ctx={document,google:{script:scriptRun},Option:function(text,value){this.text=text;this.value=value},crypto,structuredClone,Date,console,setInterval:()=>1,clearInterval:()=>{},confirm:()=>true};vm.createContext(ctx);
+ const html=fs.readFileSync(path.join(__dirname,'../apps-script/RequirementEditor.html'),'utf8');vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx);await new Promise(setImmediate);
+ nodes.get('req-title').value='動作確認';nodes.get('req-year').value='令和8年度';nodes.get('req-add').onclick();await nodes.get('req-save').onclick();
+
+ nodes.get('req-batch').value='batch';document.getElementById('req-consent').checked=true;
+ await nodes.get('req-analyze').onclick();await nodes.get('req-save').onclick();assert.equal(calls.length,1);assert(nodes.get('req-status').textContent.includes('未反映'));
+ nodes.get('req-apply-candidates').onclick();await nodes.get('req-save').onclick();assert.equal(calls.length,2);assert.equal(saved.fields[0].label,'新しい解析内容');assert.equal(saved.fields[0].help,'更新済み');assert.equal(nodes.get('req-def').value,saved.id);
+});
