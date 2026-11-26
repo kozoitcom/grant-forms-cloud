@@ -133,7 +133,7 @@ test('large prefill is stored outside script properties and old invitation forma
   assert.equal(context.readApplicantInvitationPrefill_({prefill:{address:'以前の住所'}}).address,'以前の住所');
 });
 
-test('legacy applicant drafts save partial fields and employee rows, reject invalid or submitted invitations',()=>{
+test('legacy applicant drafts save partial fields and employee rows, reject invalid invitations and allow corrections after submission',()=>{
  const {context}=harness();let invite={grant:'women-r8',company:'Company',email:'test@example.test'},stored='',n=0;
  context.readGrantInvitation_=token=>{if(token!=='valid-test-token')throw Error('invalid');return invite;};
  context.writeGrantInvitation_=(_token,value)=>{invite=value;};
@@ -143,7 +143,7 @@ test('legacy applicant drafts save partial fields and employee rows, reject inva
  assert.equal(context.saveWomenR8AnswerDraft(input),true);assert.equal(n,1);assert.equal(JSON.parse(stored).values.person,'途中');assert.equal(JSON.parse(stored).values.employees[0].position,'');
  input.values.person='再編集';context.saveWomenR8AnswerDraft(input);assert.equal(n,1);assert.equal(JSON.parse(stored).values.person,'再編集');
  assert.throws(()=>context.saveWomenR8AnswerDraft({...input,token:'invalid'}));
- invite.receipt='submitted';assert.throws(()=>context.saveWomenR8AnswerDraft(input));
+ invite.receipt='submitted';assert.equal(context.saveWomenR8AnswerDraft(input),true);
 });
 
 test('company ledger spreadsheet rows preserve identifiers and escape spreadsheet formulas',()=>{
@@ -178,4 +178,18 @@ test('company-name alone never overwrites an unrelated ledger record',()=>{
  const {context,props}=harness();delete props.COMPANY_NUMBERS_KEEP;const files=new Map();let n=0;context.requirementStore_=()=>({createFile(name,text){const id='detail-'+(++n),file={getId:()=>id,getBlob:()=>({getDataAsString:()=>text}),setContent(value){text=value;}};files.set(id,file);return file;}});context.DriveApp.getFileById=id=>files.get(id);context.syncCompanyLedgerSheet_=()=>{};
  for(const email of ['first@example.test','second@example.test'])context.upsertSubmittedCompany_({company:'同名会社',email},{company:'同名会社',receipt:email,values:{email},grant:'schema:test',submittedAt:'now'});
  assert.equal(context.companyLedgerRecords_().length,2);
+});
+
+
+test('legacy resubmission reuses receipt, folder, JSON and response row',()=>{
+ const {context}=harness();vm.runInContext(read('RequirementForms.js'),context);let invite={grant:'women-r8',email:'test@example.test'},folderCount=0,next=0;const saved=[],rows=[['header']];
+ const iter=a=>{let i=0;return {hasNext:()=>i<a.length,next:()=>a[i++]}};
+ const folder={getId:()=> 'submission',getUrl:()=> 'https://drive.google.com/drive/folders/submission',isTrashed:()=>false,createFile(name,text){if(typeof name==='object'){text=name.getBytes();name=name.getName()}const f={id:'file'+(++next),name,text,trashed:false,getId(){return this.id},getSize(){return this.text.length},isTrashed(){return this.trashed},setTrashed(v){this.trashed=v},setName(v){this.name=v},setContent(v){this.text=v},getBlob(){return {getDataAsString:()=>this.text}}};saved.push(f);return f;},getFilesByName:n=>iter(saved.filter(f=>!f.trashed&&f.name===n))};
+ const root={isTrashed:()=>false,createFolder(){folderCount++;return folder}};context.DriveApp.getFolderById=()=>folder;context.DriveApp.getFileById=id=>saved.find(f=>f.id===id);
+ const sheet={getDataRange:()=>({getValues:()=>rows}),appendRow:r=>rows.push(r),getRange:(row,col)=>({getValue:()=>true,setValue(){},setValues(values){rows[row-1]=values[0]}})};
+ context.getWomenR8Storage_=()=>({root,sheet});context.SpreadsheetApp.flush=()=>{};context.readGrantInvitation_=()=>({...invite});context.writeGrantInvitation_=(_,v)=>invite=v;context.validateWomenR8Employees_=()=>[];context.validateWomenR8Counts_=()=>({});context.accumulateSubmittedCompany_=()=>{};context.getDocumentSettings_=()=>({});vm.runInContext("WOMEN_R8_DOCUMENTS.splice(0,WOMEN_R8_DOCUMENTS.length,['doc','書類','all'])",context);
+ const blob=()=>({name:'source.pdf',getBytes:()=>[37,80,68,70,45],getName(){return this.name},setName(v){this.name=v;return this}});
+ const input={inviteToken:'token',industry:'通信',entity:'company',location:'no',company:'初回',address:'住所',representative:'代表',person:'担当',email:'test@example.test',submissionVersion:0,submissionRequestId:'first',doc:blob()};
+ const first=context.submitWomenR8(input);const second=context.submitWomenR8({...input,submissionVersion:1,submissionRequestId:'second',company:'更新',doc:blob()});assert.equal(first.receipt,second.receipt);assert.equal(folderCount,1);assert.equal(rows.length,2);assert.equal(rows[1][3],'更新');assert.equal(saved.filter(f=>!f.trashed&&f.name==='書類.pdf').length,1);assert.equal(saved.filter(f=>!f.trashed&&f.name==='入力内容.json').length,1);assert.equal(second.submissionVersion,2);
+ context.submitWomenR8({...input,doc:null,submissionVersion:2,submissionRequestId:'third'});assert.equal(rows.length,2);assert.equal(folderCount,1);
 });
