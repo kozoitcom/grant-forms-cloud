@@ -132,3 +132,16 @@ test('large prefill is stored outside script properties and old invitation forma
   assert.equal(context.readApplicantInvitationPrefill_(invitation).employees.length,80);
   assert.equal(context.readApplicantInvitationPrefill_({prefill:{address:'以前の住所'}}).address,'以前の住所');
 });
+
+test('legacy applicant drafts save partial fields and employee rows, reject invalid or submitted invitations',()=>{
+ const {context}=harness();let invite={grant:'women-r8',company:'Company',email:'test@example.test'},stored='',n=0;
+ context.readGrantInvitation_=token=>{if(token!=='valid-test-token')throw Error('invalid');return invite;};
+ context.writeGrantInvitation_=(_token,value)=>{invite=value;};
+ context.requirementStore_=()=>({createFile(_name,json){stored=json;n++;return {getId:()=> 'test-draft'};}});
+ context.DriveApp.getFileById=()=>({setContent(json){stored=json;},getBlob(){return {getDataAsString:()=>stored};}});
+ const input={token:'valid-test-token',values:{person:'途中',employees:[{name:'従業員',position:'',employment:''}]}};
+ assert.equal(context.saveWomenR8AnswerDraft(input),true);assert.equal(n,1);assert.equal(JSON.parse(stored).values.person,'途中');assert.equal(JSON.parse(stored).values.employees[0].position,'');
+ input.values.person='再編集';context.saveWomenR8AnswerDraft(input);assert.equal(n,1);assert.equal(JSON.parse(stored).values.person,'再編集');
+ assert.throws(()=>context.saveWomenR8AnswerDraft({...input,token:'invalid'}));
+ invite.receipt='submitted';assert.throws(()=>context.saveWomenR8AnswerDraft(input));
+});
