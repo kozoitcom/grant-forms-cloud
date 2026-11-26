@@ -38,6 +38,21 @@
 <label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
 <label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
 <button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
+<h3>申請者へ送る会社別リンク</h3>
+<p>上で公開した助成金の会社専用リンクを、この画面で発行できます。会社台帳を選ぶと登録済み情報を事前入力します。</p>
+<label for="req-link-company-id">会社台帳<select id="req-link-company-id"><option value="">新規会社</option></select></label>
+<label for="req-link-company-name">会社名<input id="req-link-company-name" maxlength="120"></label>
+<label for="req-link-email">申請者のメールアドレス<input id="req-link-email" type="email" maxlength="180"></label>
+<button id="req-link-issue" type="button">申請者用リンクを発行</button>
+<div id="req-link-result" hidden>
+<label for="req-link-url">申請者へ送るリンク<input id="req-link-url" readonly></label>
+<button id="req-link-copy" type="button">リンクをコピー</button>
+<p><a id="req-link-open" target="_blank" rel="noopener noreferrer">申請者の入力画面を開く</a></p>
+<label for="req-link-subject">案内メール件名<input id="req-link-subject" readonly></label>
+<label for="req-link-body">案内メール本文<textarea id="req-link-body" readonly></textarea></label>
+<button id="req-link-send" type="button">この内容で案内メールを送信</button>
+</div><p id="req-link-status" role="status"></p>
+
 </section>
 <script>
 (()=>{
@@ -81,8 +96,8 @@ async function refresh(){const [defs,bs,invites]=await Promise.all([rpc('listReq
  $('req-batch').replaceChildren(new Option('資料を選択',''));batches.forEach(b=>$('req-batch').add(new Option(b.year+' '+b.title+' / '+b.files.length+'件',b.id)));$('req-batch').value=oldBatch;
  $('req-company').replaceChildren(new Option('会社リンクを選択',''));invites.filter(i=>!i.receipt&&!i.deletedAt&&i.grant==='schema:'+draft.id&&Date.now()<i.expiresAt).forEach(i=>$('req-company').add(new Option(i.company+' / '+i.email,i.historyId)));
 }
-async function run(fn){if(busy)return;busy=true;document.querySelectorAll('#req-fields input,#req-fields select,#req-fields textarea,[id^="req-"]').forEach(e=>{if(e.tagName==='BUTTON')e.disabled=true;});try{await fn();}catch(e){status(e.message);}finally{busy=false;document.querySelectorAll('button[id^="req-"]').forEach(e=>e.disabled=false);}}
-$('req-load').onclick=()=>run(async()=>{if(dirty&&!confirm('未保存の変更を破棄して読み込みますか？'))return;draft=$('req-def').value?await rpc('getRequirementForm',$('req-def').value):{id:'',revision:0,title:'',year:'',fields:[],batchIds:[]};$('req-title').value=draft.title;$('req-year').value=draft.year;candidates=[];analyzed.clear();dirty=false;render();renderCandidates();await refresh();status('読み込みました。');});
+async function run(fn){if(busy)return;busy=true;document.querySelectorAll('#req-fields input,#req-fields select,#req-fields textarea,[id^="req-"]').forEach(e=>{if(e.tagName==='BUTTON')e.disabled=true;});try{await fn();}catch(e){status(e.message);}finally{busy=false;document.querySelectorAll('button[id^="req-"]').forEach(e=>e.disabled=false);if(inlineInvitation?.sent)$('req-link-send').disabled=true;}}
+$('req-load').onclick=()=>run(async()=>{if(dirty&&!confirm('未保存の変更を破棄して読み込みますか？'))return;clearInlineInvitation();draft=$('req-def').value?await rpc('getRequirementForm',$('req-def').value):{id:'',revision:0,title:'',year:'',fields:[],batchIds:[]};$('req-title').value=draft.title;$('req-year').value=draft.year;candidates=[];analyzed.clear();dirty=false;render();renderCandidates();await refresh();status('読み込みました。');});
 $('req-batches-refresh').onclick=()=>run(refresh);
 $('req-title').oninput=$('req-year').oninput=edited;
 $('req-batch').onchange=()=>{const b=batches.find(x=>x.id===$('req-batch').value);if(b&&!draft.id){draft.title=b.title;draft.year=b.year;$('req-title').value=b.title;$('req-year').value=b.year;edited();}};
@@ -127,6 +142,17 @@ function showGptSettings(r){$('req-ai-model').value=r.model||'gpt-6.1-terra';$('
 $('req-ai-save').onclick=()=>run(async()=>{const input={key:$('req-ai-key').value,model:$('req-ai-model').value};$('req-ai-settings-status').textContent='保存中…';try{const result=await rpc('saveOpenAiRequirementSettings',input);showGptSettings(result);$('req-ai-settings-status').textContent='保存しました。GPT接続を確認中…';const test=await rpc('authorizeGrantAiConnection');$('req-ai-settings-status').textContent=test.message;}catch(error){$('req-ai-settings-status').textContent=error.message;throw error;}});
 rpc('getOpenAiRequirementSettings').then(r=>{showGptSettings(r);$('req-ai-key').value=r.key||'';}).catch(e=>status(e.message));
 rpc('getGrantAiAuthorization').then(r=>{if(r.required){const link=$('req-auth-link');link.href=r.url;link.hidden=false;}}).catch(e=>status(e.message));
+
+let inlineCompanies=[],inlineInvitation=null;
+function clearInlineInvitation(){inlineInvitation=null;$('req-link-result').hidden=true;$('req-link-url').value='';$('req-link-open').removeAttribute?.('href');}
+function inlineInput(){return {grant:'schema:'+draft.id,companyId:$('req-link-company-id').value,company:$('req-link-company-name').value.trim(),email:$('req-link-email').value.trim()};}
+$('req-link-company-id').onchange=()=>{const company=inlineCompanies.find(c=>c.id===$('req-link-company-id').value);$('req-link-company-name').value=company?.name||'';$('req-link-company-name').readOnly=!!company;$('req-link-email').value=company?.profile?.email||'';clearInlineInvitation();};
+$('req-link-company-name').oninput=$('req-link-email').oninput=clearInlineInvitation;
+rpc('listCompanyNumbers').then(items=>{inlineCompanies=items;for(const item of items)$('req-link-company-id').add(new Option(item.name,item.id));}).catch(e=>{$('req-link-status').textContent=e.message;});
+$('req-link-issue').onclick=()=>run(async()=>{clearInlineInvitation();if(!draft.id||dirty)throw Error('先に項目を保存して公開してください。');const input=inlineInput();if(!input.company||!input.email||!$('req-link-email').checkValidity()){$('req-link-status').textContent='会社名とメールアドレスを入力してください。';return;}$('req-link-status').textContent='会社別リンクを発行中…';try{const result=await rpc('createGrantInvitation',input);inlineInvitation={...result,definitionId:draft.id};$('req-link-url').value=result.url;$('req-link-open').href=result.url;$('req-link-subject').value=result.subject;$('req-link-body').value=result.body;$('req-link-result').hidden=false;$('req-link-send').disabled=false;$('req-link-status').textContent='リンクを発行しました。コピーして申請者へ送るか、案内メールを送信できます。';await refresh();}catch(e){$('req-link-status').textContent=e.message;throw e;}});
+$('req-link-copy').onclick=async()=>{if(!inlineInvitation)return;try{await navigator.clipboard.writeText(inlineInvitation.url);$('req-link-status').textContent='リンクをコピーしました。';}catch(_){$('req-link-url').focus();$('req-link-url').select();$('req-link-status').textContent='リンクを選択しました。Ctrl+Cでコピーしてください。';}};
+$('req-link-send').onclick=()=>run(async()=>{if(!inlineInvitation||inlineInvitation.definitionId!==draft.id)throw Error('リンクを発行し直してください。');$('req-link-status').textContent='案内メールを送信中…';try{await rpc('sendGrantInvitation',inlineInvitation.token);inlineInvitation.sent=true;$('req-link-status').textContent='案内メールを送信しました。';}catch(e){$('req-link-status').textContent=e.message;throw e;}});
+
 refresh().catch(e=>status(e.message));
 })();
 </script>
