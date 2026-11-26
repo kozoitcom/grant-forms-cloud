@@ -97,3 +97,17 @@ test('published field deletion hides row, persists history and offers restoratio
  await nodes.get('req-save').onclick();assert.equal(saved.fields.length,1);assert.equal(saved.fields[0].removed,true);assert.equal(saved.fields[0].enabled,false);
  nodes.get('req-removed-list').children[0].onclick();assert.equal(nodes.get('req-fields').children.length,1);await nodes.get('req-save').onclick();assert.equal(saved.fields[0].removed,false);assert.equal(saved.fields[0].enabled,false);
 });
+
+test('inline Drive storage setting persists and displays verified destination',async()=>{
+ const nodes=new Map();
+ const el=tag=>({tagName:tag.toUpperCase(),value:'',checked:false,style:{},children:[],setAttribute(k,v){this[k]=v},append(...x){this.children.push(...x)},replaceChildren(...x){this.children=x},add(x){this.children.push(x)}});
+ const document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,el('input'));return nodes.get(id)},createElement:el,querySelectorAll:()=>[]};
+ let saved=null;const calls=[];
+ const handlers={getSubmissionStorageSettings:()=>({url:'',name:'標準'}),saveSubmissionStorageSettings:url=>{assert.equal(url,'https://drive.google.com/drive/folders/test-folder');return {url,name:'指定保存先'};},listRequirementForms:()=>saved?[saved]:[],listGrantMaterialBatches:()=>[],listGrantInvitations:()=>[],getRequirementAiStatus:()=>({configured:false}),saveRequirementForm:input=>{calls.push(structuredClone(input));saved={...structuredClone(input),id:'11111111-1111-1111-1111-111111111111',revision:input.revision+1};return structuredClone(saved)}};
+ const run=()=>{let ok,fail;return new Proxy({withSuccessHandler(fn){ok=fn;return this},withFailureHandler(fn){fail=fn;return this}},{get(target,name){if(name in target)return target[name];return (...args)=>Promise.resolve().then(()=>handlers[name](...args)).then(ok,fail)}})};
+ const scriptRun={};Object.defineProperty(scriptRun,'run',{get:run});
+ const ctx={document,google:{script:scriptRun},Option:function(text,value){this.text=text;this.value=value},crypto,structuredClone,Date,console,confirm:()=>true};vm.createContext(ctx);
+ const html=fs.readFileSync(path.join(__dirname,'../apps-script/RequirementEditor.html'),'utf8');vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx);await new Promise(setImmediate);
+
+ nodes.get('req-storage-folder').value='https://drive.google.com/drive/folders/test-folder';await nodes.get('req-storage-save').onclick();assert.equal(nodes.get('req-storage-open').hidden,false);assert.equal(nodes.get('req-storage-open').href,'https://drive.google.com/drive/folders/test-folder');assert(nodes.get('req-storage-status').textContent.includes('今後の提出から'));
+});
