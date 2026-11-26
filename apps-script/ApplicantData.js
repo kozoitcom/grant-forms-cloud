@@ -18,6 +18,8 @@ function submitWomenR8(form) {
       || !['yes','no'].includes(corporate ? location : otherCity)) {
     throw new Error('必須項目とメールアドレスを確認してください。');
   }
+  const priorInvitation=token?readGrantInvitation_(token):null;
+  const priorFolder=priorInvitation?.receipt?existingSubmissionFolder_(priorInvitation.folderId,priorInvitation.folderUrl):null;
   const applicable = new Set(['all', entity]);
   if (corporate && location === 'yes') applicable.add('location');
   if (!corporate && otherCity === 'yes') applicable.add('otherCity');
@@ -26,7 +28,7 @@ function submitWomenR8(form) {
   const uploads = WOMEN_R8_DOCUMENTS.filter(([key, , group]) => applicable.has(group) && !documentSettings[key]?.uploadNotRequired)
     .map(([key, label]) => {
       const blob = form[key];
-      if (!blob || typeof blob.getBytes !== 'function') throw new Error(label + 'を添付してください。');
+      if (!blob || typeof blob.getBytes !== 'function' || !blob.getName?.()) {if(priorFolder?.getFilesByName(label+'.pdf').hasNext())return [key,null];throw new Error(label + 'を添付してください。');}
       const bytes = blob.getBytes();
       total += bytes.length;
       if (total > WOMEN_R8_LIMIT) throw new Error('添付は合計20 MB以内にしてください。');
@@ -42,48 +44,50 @@ function submitWomenR8(form) {
   let recorded = false;
   try {
     const invitation = token ? readGrantInvitation_(token) : null;
-    if (invitation && invitation.receipt) return {receipt: invitation.receipt};
+    if (invitation?.receipt && (form.submissionVersion===undefined || form.submissionRequestId&&invitation.lastSubmissionRequestId===form.submissionRequestId)) return {receipt:invitation.receipt,submissionVersion:invitation.submissionVersion||1,savedFiles:invitation.savedFiles||[]};
+    if(Number(form.submissionVersion||0)!==Number(invitation?.receipt?(invitation.submissionVersion||1):0))throw Error('別の画面で更新されています。再読み込みしてください。');
     if (invitation && (email.toLowerCase() !== invitation.email.toLowerCase())) {
       throw new Error('案内メールの宛先メールアドレスを確認してください。');
     }
     const {root, sheet} = getWomenR8Storage_();
-    const receipt = Utilities.getUuid();
+    const receipt = invitation?.receipt || Utilities.getUuid();
     const destinationId = PropertiesService.getScriptProperties().getProperty('GRANT_SUBMISSION_FOLDER_ID');
     const destination = destinationId ? DriveApp.getFolderById(destinationId) : root;
     if (destination.isTrashed()) throw new Error('保存先フォルダが削除されています。');
-    folder = destination.createFolder(company + ' - 女性活躍R8 - ' + receipt);
-    uploads.forEach(([key, blob]) => {
-      const title = WOMEN_R8_DOCUMENTS.find(document => document[0] === key)[1];
-      folder.createFile(blob.setName(title + '.pdf'));
-    });
-    folder.createFile('入力内容.json', JSON.stringify({
+    folder = priorFolder || destination.createFolder(company + ' - 女性活躍R8 - ' + receipt);
+    replaceGrantSubmissionFiles_(folder,uploads.filter(([,blob])=>blob).map(([key,blob])=>({key,name:WOMEN_R8_DOCUMENTS.find(document=>document[0]===key)[1]+'.pdf',blob,size:blob.getBytes().length})));
+    const responseJson=JSON.stringify({
       receipt, submittedAt: new Date().toISOString(), company, industry, entity,
       ...Object.fromEntries(fields.map(([key], index) => [key, values[index]])),
       representativeKana: String(form.representativeKana || '').trim().slice(0, 120),
       location: corporate ? location : '', otherCity: corporate ? '' : otherCity,
-      genderCounts, employees
-    }, null, 2), MimeType.PLAIN_TEXT);
+      genderCounts, employees,updatedAt:new Date().toISOString(),submissionVersion:Number(invitation?.submissionVersion|| (invitation?.receipt?1:0))+1
+    }, null, 2);
+    const existingResponse=folder.getFilesByName?.('入力内容.json');if(existingResponse?.hasNext())existingResponse.next().setContent(responseJson);else folder.createFile('入力内容.json',responseJson,MimeType.PLAIN_TEXT);
     const safe = text => /^[=+@-]/.test(text) ? "'" + text : text;
     if (!sheet.getRange(1, 15).getValue()) sheet.getRange(1, 15).setValue('代表者のふりがな');
     sheet.getRange(1, 16).setValue('男女別人数・女性割合判定');
     sheet.getRange(1, 17).setValue('従業員一覧');
     sheet.getRange(1, 18).setValue('業種');
-    sheet.appendRow([new Date(), receipt, corporate ? '法人' : '個人事業主',
+    const responseRow=[new Date(), receipt, corporate ? '法人' : '個人事業主',
       ...values.map(safe), corporate ? location : '', corporate ? '' : otherCity,
-      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts), JSON.stringify(employees), safe(industry)]);
+      uploads.length, folder.getUrl(), safe(String(form.representativeKana || '').trim().slice(0, 120)), JSON.stringify(genderCounts), JSON.stringify(employees), safe(industry)];
+    const existingRows=invitation?.receipt?sheet.getDataRange().getValues():[],existingIndex=existingRows.findIndex(row=>row[1]===receipt);if(existingIndex>=0){responseRow[0]=existingRows[existingIndex][0];sheet.getRange(existingIndex+1,1,1,responseRow.length).setValues([responseRow]);}else sheet.appendRow(responseRow);
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
       const ledgerRecord={receipt,company,grant:'women-r8',submittedAt:new Date().toISOString(),values:{...Object.fromEntries(fields.map(([key],index)=>[key,values[index]])),industry,entity,location:corporate?location:'',otherCity:corporate?'':otherCity,representativeKana:String(form.representativeKana||'').trim().slice(0,120)},employees,genderCounts};
-      accumulateSubmittedCompany_(invitation,ledgerRecord);
+      invitation.submissionVersion=Number(invitation.submissionVersion||(invitation.receipt?1:0))+1;
+      accumulateSubmittedCompany_(invitation,{...ledgerRecord,receipt:receipt+':'+invitation.submissionVersion});
+      invitation.folderId=folder.getId();invitation.savedFiles=uploads.map(([key])=>key);invitation.lastSubmissionRequestId=String(form.submissionRequestId||'');
       invitation.genderCounts = genderCounts;
       invitation.receipt = receipt;
       invitation.folderUrl = folder.getUrl();
       writeGrantInvitation_(token, invitation);
     }
-    return {receipt};
+    return {receipt,updated:!!priorInvitation?.receipt,submissionVersion:invitation?.submissionVersion||1,savedFiles:uploads.map(([key])=>key)};
   } catch (error) {
-    if (folder && !recorded) {
+    if (folder && !recorded && !priorInvitation?.receipt) {
       try { folder.setTrashed(true); } catch (_) {}
     }
     throw new Error('書類を保存できませんでした。受付担当者にご連絡ください。');
