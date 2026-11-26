@@ -80,3 +80,20 @@ test('publication saves unsaved requirements first and requires review',async()=
  const box=nodes.get('req-fields').children[0].children[1].children[1];const label=box.children.find(l=>l.children[0]==='項目名').children[1];label.value='公開する項目';label.oninput();nodes.get('req-reviewed').checked=true;
  await nodes.get('req-publish').onclick();assert.equal(calls.length,1);assert(nodes.get('req-status').textContent.includes('公開しました'));
 });
+
+test('published field deletion hides row, persists history and offers restoration',async()=>{
+ const nodes=new Map();
+ const el=tag=>({tagName:tag.toUpperCase(),value:'',checked:false,style:{},children:[],setAttribute(k,v){this[k]=v},append(...x){this.children.push(...x)},replaceChildren(...x){this.children=x},add(x){this.children.push(x)}});
+ const document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,el('input'));return nodes.get(id)},createElement:el,querySelectorAll:()=>[]};
+ let saved=null;const calls=[];
+ const handlers={listRequirementForms:()=>saved?[saved]:[],listGrantMaterialBatches:()=>[],listGrantInvitations:()=>[],getRequirementAiStatus:()=>({configured:false}),saveRequirementForm:input=>{calls.push(structuredClone(input));saved={...structuredClone(input),id:'11111111-1111-1111-1111-111111111111',revision:input.revision+1,published:{fields:structuredClone(input.fields)}};return structuredClone(saved)}};
+ const run=()=>{let ok,fail;return new Proxy({withSuccessHandler(fn){ok=fn;return this},withFailureHandler(fn){fail=fn;return this}},{get(target,name){if(name in target)return target[name];return (...args)=>Promise.resolve().then(()=>handlers[name](...args)).then(ok,fail)}})};
+ const scriptRun={};Object.defineProperty(scriptRun,'run',{get:run});
+ const ctx={document,google:{script:scriptRun},Option:function(text,value){this.text=text;this.value=value},crypto,structuredClone,Date,console,confirm:()=>true};vm.createContext(ctx);
+ const html=fs.readFileSync(path.join(__dirname,'../apps-script/RequirementEditor.html'),'utf8');vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx);await new Promise(setImmediate);
+
+ nodes.get('req-title').value='test';nodes.get('req-year').value='R8';nodes.get('req-add').onclick();await nodes.get('req-save').onclick();
+ nodes.get('req-fields').children[0].children.find(x=>x.textContent==='削除').onclick();assert.equal(nodes.get('req-fields').children.length,0);assert.equal(nodes.get('req-removed').hidden,false);
+ await nodes.get('req-save').onclick();assert.equal(saved.fields.length,1);assert.equal(saved.fields[0].removed,true);assert.equal(saved.fields[0].enabled,false);
+ nodes.get('req-removed-list').children[0].onclick();assert.equal(nodes.get('req-fields').children.length,1);await nodes.get('req-save').onclick();assert.equal(saved.fields[0].removed,false);assert.equal(saved.fields[0].enabled,false);
+});
