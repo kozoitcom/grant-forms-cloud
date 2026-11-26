@@ -195,3 +195,14 @@ test('legacy resubmission reuses receipt, folder, JSON and response row',()=>{
  const first=context.submitWomenR8(input);const second=context.submitWomenR8({...input,submissionVersion:1,submissionRequestId:'second',company:'更新',doc:blob()});assert.equal(first.receipt,second.receipt);assert.equal(folderCount,1);assert.equal(rows.length,2);assert.equal(rows[1][3],'更新');assert.equal(saved.filter(f=>!f.trashed&&f.name==='書類.pdf').length,1);assert.equal(saved.filter(f=>!f.trashed&&f.name==='入力内容.json').length,1);assert.equal(second.submissionVersion,2);
  context.submitWomenR8({...input,doc:null,submissionVersion:2,submissionRequestId:'third'});assert.equal(rows.length,2);assert.equal(folderCount,1);
 });
+
+test('multiple company field aliases persist, prefill alternate labels and reject ambiguity',()=>{
+ const {context,props}=harness();delete props.COMPANY_NUMBERS_KEEP;
+ const id='11111111-1111-1111-1111-111111111111';props['COMPANY_NUMBERS_'+id]=JSON.stringify({id,name:'会社A',profile:{address:'住所A'},entries:[]});context.syncCompanyLedgerSheet_=()=>{};
+ context.saveCompanyFieldAliases({companyId:id,fields:[{key:'common:company',aliases:'企業名\n法人名\n企業名'},{key:'common:address',aliases:'所在地\n住所'}]});
+ assert.equal(context.getCompanyFieldAliases(id).find(f=>f.key==='common:company').aliases.length,2);
+ context.requirementRead_=()=>({published:{fields:[{id:'corp',label:'企業名',type:'text',enabled:true},{id:'legal',label:'法人名',type:'text',enabled:true},{id:'place',label:'住所',type:'text',enabled:true},{id:'wrongType',label:'企業名',type:'number',enabled:true}]}});
+ const prefill=context.applicantPrefill_(id,'','schema:test');assert.equal(prefill.corp,'会社A');assert.equal(prefill.legal,'会社A');assert.equal(prefill.place,'住所A');assert.equal(prefill.wrongType,undefined);
+ assert.throws(()=>context.saveCompanyFieldAliases({companyId:id,fields:[{key:'common:address',aliases:'企業名'}]}),/複数/);
+ context.saveCompanyFieldAliases({companyId:id,fields:[{key:'common:company',aliases:''}]});assert.equal(context.getCompanyFieldAliases(id).find(f=>f.key==='common:company').aliases.length,0);assert.equal(context.companyLedgerRecords_()[0].name,'会社A');
+});
