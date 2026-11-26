@@ -145,3 +145,17 @@ test('legacy applicant drafts save partial fields and employee rows, reject inva
  assert.throws(()=>context.saveWomenR8AnswerDraft({...input,token:'invalid'}));
  invite.receipt='submitted';assert.throws(()=>context.saveWomenR8AnswerDraft(input));
 });
+
+test('company ledger spreadsheet rows preserve identifiers and escape spreadsheet formulas',()=>{
+ const {context}=harness();const rows=context.companyLedgerRows_([{id:'id1',name:'=formula',profile:{phone:'00123',industry:'通信'},entries:[['管理番号','0001']]}]);
+ assert.equal(rows[0][1],'会社名');assert.equal(rows[1][1],"'=formula");assert.equal(rows[1][7],'00123');assert.equal(rows[1][8],'0001');
+});
+test('company ledger folder configuration exports existing records and returns folder and spreadsheet links',()=>{
+ const {context,props,setUser}=harness();let moved=0,sync=0;
+ const folder={getUrl:()=> 'https://drive.google.com/drive/folders/test-folder-123',getName:()=> '台帳保存先',isTrashed:()=>false,createFile:()=>({setTrashed(){}})};
+ context.DriveApp.getFolderById=()=>folder;context.DriveApp.getFileById=()=>({moveTo(f){assert.equal(f,folder);moved++;},setTrashed(){}});
+ context.SpreadsheetApp.create=()=>({getId:()=> 'ledger-sheet'});context.SpreadsheetApp.openById=()=>({getUrl:()=> 'https://docs.google.com/spreadsheets/d/ledger-sheet/edit'});
+ context.listCompanyNumbers=()=>[{id:'company1',name:'会社'}];context.syncCompanyLedgerSheet_=(records,id)=>{assert.equal(records[0].name,'会社');assert.equal(id,'ledger-sheet');sync++;};
+ const result=context.saveCompanyLedgerStorageSettings('https://drive.google.com/drive/folders/test-folder-123');assert.equal(props.COMPANY_LEDGER_FOLDER_ID,'test-folder-123');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'ledger-sheet');assert.equal(sync,1);assert.equal(moved,1);assert(result.spreadsheetUrl.includes('ledger-sheet'));
+ setUser('other@example.test');assert.throws(()=>context.getCompanyLedgerStorageSettings());assert.throws(()=>context.saveCompanyLedgerStorageSettings('bad'));
+});
