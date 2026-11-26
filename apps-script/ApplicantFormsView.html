@@ -1,7 +1,7 @@
 <p>①で設定した助成金の申請者フォームを確認し、②の会社台帳・保存済み申請データを事前入力に使って会社専用リンクを発行します。</p>
-<p>①で必要項目を公開した助成金も、ここから選択して会社別リンクを発行できます。</p>
+<p>①で公開した助成金を選択すると、①のリンク発行欄と同じ申請者フォームを開きます。</p>
 <section><h2>申請者フォームの確認・会社向けリンクの発行</h2>
-<form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="women-r8">令和8年度 女性活躍情報公開促進奨励金</option></select>
+<form id="issue"><label for="grant">助成金フォーム</label><select id="grant" name="grant"><option value="">助成金を選択してください</option></select>
 
 
 <label for="issue-company">会社台帳</label><select id="issue-company" name="companyId"><option value="">新規会社</option></select>
@@ -30,7 +30,7 @@ const preview = document.getElementById('preview');
 const send = document.getElementById('send');
 const notice = document.getElementById('notice');
 let token;
-google.script.run.withSuccessHandler(items=>{for(const item of items.filter(x=>x.published))document.getElementById('grant').add(new Option(item.year+' '+item.title,'schema:'+item.id));}).withFailureHandler(error=>{notice.textContent=error.message;}).listRequirementForms();
+google.script.run.withSuccessHandler(items=>{const select=document.getElementById('grant'),published=items.filter(x=>x.published);for(const item of published)select.add(new Option(item.year+' '+item.title,'schema:'+item.id));if(!published.some(x=>/女性活躍情報公開促進奨励金/.test(x.title)))select.add(new Option('令和8年度 女性活躍情報公開促進奨励金','women-r8'));if(published.length===1)select.value='schema:'+published[0].id;updateCompanyOptions();}).withFailureHandler(error=>{notice.textContent=error.message;}).listRequirementForms();
 
 const companySelect = document.getElementById('issue-company');
 const sourceSelect = document.getElementById('source-receipt');
