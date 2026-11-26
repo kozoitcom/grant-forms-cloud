@@ -70,7 +70,7 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 </section>
 <section><label for="note">備考</label><textarea id="note" name="note" rows="3" maxlength="1000"></textarea></section>
 <div class="trap" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
-<button type="submit">書類を送信</button>
+<button id="save-answer-draft" type="button">入力内容を一時保存</button><p>同じ会社別リンクから再開できます。添付ファイルは再選択が必要です。</p><p id="answer-draft-status" role="status"></p><button type="submit">書類を送信</button>
 <div id="status" role="status"></div>
 </form></main>
 <script id="initial-form-data" type="application/json"><?!= initialFormJson ?></script>
@@ -127,6 +127,8 @@ for (const [key,value] of Object.entries(initialForm.values)) {
   const input = form.elements.namedItem(key);
   if (input && input.type !== 'file' && input.type !== 'hidden' && key !== 'inviteToken' && key !== 'previewMode') input.value = String(value ?? '');
 }
+const draftButton=document.getElementById('save-answer-draft');draftButton.disabled=initialForm.preview;
+draftButton.onclick=()=>{if(initialForm.preview)return;const values={};for(const input of form.querySelectorAll('input,select,textarea')){if(input.name&&input.type!=='file'&&input.type!=='hidden'&&input.name!=='website')values[input.name]=input.value;}values.employees=[...employeeRows.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-employee]')].map(input=>[input.dataset.employee,input.value])));draftButton.disabled=true;document.getElementById('answer-draft-status').textContent='一時保存中…';google.script.run.withSuccessHandler(()=>{draftButton.disabled=false;document.getElementById('answer-draft-status').textContent='一時保存しました。同じリンクから再開できます（添付ファイルは再選択してください）。';}).withFailureHandler(e=>{draftButton.disabled=false;document.getElementById('answer-draft-status').textContent='一時保存できませんでした：'+e.message;}).saveWomenR8AnswerDraft({token:form.elements.inviteToken.value,values});};
 function updateGenderCounts() {
   let complete = true;
   let eligible = false;
