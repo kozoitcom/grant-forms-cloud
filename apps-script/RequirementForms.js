@@ -76,17 +76,16 @@ function resolveRequirementSnapshot_(invite){
 }
 function requirementPage_(params){
   let invite=null,snapshot,values={};
-  if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=readApplicantInvitationPrefill_(invite);if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);}
+  if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=requirementApplicantValues_(invite);}
   else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt,params.grant);}
-  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
+  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt,submissionVersion:invite?(submittedRequirementRecord_(invite)?.submissionVersion||0):0,savedFiles:invite?Object.keys(submittedRequirementRecord_(invite)?.documents||{}):[]}).replace(/</g,'\\u003c');
   return p.evaluate().setTitle(snapshot.title+' | 申請フォーム').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
 function requirementDisplaySnapshot_(snapshot){return {revision:snapshot.revision,title:snapshot.title,year:snapshot.year,fields:snapshot.fields.map(({source,target,...f})=>f)};}
 function getRequirementApplicantState(token){
   const invite=readGrantInvitation_(String(token||''));if(!invite.grant.startsWith('schema:'))throw new Error('受付リンクが無効です。');
-  const values=readApplicantInvitationPrefill_(invite);
-  if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);
-  return {snapshot:requirementDisplaySnapshot_(resolveRequirementSnapshot_(invite)),values,token,preview:false,submitted:!!invite.receipt};
+  const values=requirementApplicantValues_(invite);
+  return {snapshot:requirementDisplaySnapshot_(resolveRequirementSnapshot_(invite)),values,token,preview:false,submitted:!!invite.receipt,submissionVersion:submittedRequirementRecord_(invite)?.submissionVersion||0,savedFiles:Object.keys(submittedRequirementRecord_(invite)?.documents||{})};
 }
 function requirementAnswers_(fields,raw){
   const out={},active=f=>f.enabled&&(!f.condition||String(raw[f.condition.field]??'')===f.condition.equals);
@@ -102,12 +101,12 @@ function requirementAnswers_(fields,raw){
 /** Save only text answers; file inputs must be reselected after a reload. */
 function saveRequirementAnswerDraft(input){
   const token=String(input?.token||''),invite=readGrantInvitation_(token);
-  if(!invite.grant.startsWith('schema:')||invite.receipt)throw new Error('このリンクは編集できません。');
+  if(!invite.grant.startsWith('schema:'))throw new Error('このリンクは編集できません。');
   const snapshot=resolveRequirementSnapshot_(invite);
   if(snapshot.revision!==Number(input.revision))throw new Error('項目が更新されました。画面を再読み込みしてください。入力済みの保存内容は引き継ぎます。');
   const answers={};for(const f of snapshot.fields){if(['file','file_word','file_excel'].includes(f.type))continue;const v=String(input.answers?.[f.id]??'');if(v.length>4000)throw new Error('入力内容が長すぎます。');answers[f.id]=v;}
   const lock=LockService.getScriptLock();lock.waitLock(20000);
-  try{const latest=readGrantInvitation_(token);if(latest.receipt)throw new Error('提出済みです。');if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
+  try{const latest=readGrantInvitation_(token);if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
     const file=latest.answerDraftId?DriveApp.getFileById(latest.answerDraftId):null;
     const old=file?JSON.parse(file.getBlob().getDataAsString('UTF-8')).answers:{};
     const json=JSON.stringify({revision:snapshot.revision,answers:{...old,...answers},updatedAt:new Date().toISOString()});
@@ -115,26 +114,32 @@ function saveRequirementAnswerDraft(input){
     return true;
   }finally{lock.releaseLock();}
 }
+function submittedRequirementRecord_(invite){if(!invite.receipt)return null;const id=PropertiesService.getScriptProperties().getProperty('REQUIREMENT_RESPONSE_'+invite.receipt);return id?JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8')):null;}
+function requirementApplicantValues_(invite){const values=readApplicantInvitationPrefill_(invite),submitted=submittedRequirementRecord_(invite);if(submitted)Object.assign(values,submitted.values);if(invite.answerDraftId){const draft=JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8'));if(!submitted||String(draft.updatedAt||'')>String(submitted.updatedAt||submitted.submittedAt||''))Object.assign(values,draft.answers);}return values;}
 function submitRequirementApplication(form){
-  if(!form||form.website)throw new Error('送信できません。');const invite=readGrantInvitation_(String(form.inviteToken||''));if(!invite.grant.startsWith('schema:'))throw new Error('受付リンクが無効です。');
-  const snapshot=resolveRequirementSnapshot_(invite);if(Number(form.revision)!==snapshot.revision)throw new Error('項目が更新されています。画面を再読み込みしてください。');
-  let raw;try{raw=JSON.parse(form.answersJson);}catch(_){throw new Error('入力内容を確認してください。');}
-  const answers=requirementAnswers_(snapshot.fields,raw),uploads=[];
-  if(answers.email && answers.email.toLowerCase()!==invite.email.toLowerCase())throw new Error('案内先のメールアドレスと一致しません。');
-  const submittedCompany=String(answers.company||invite.company).trim();if(!submittedCompany||submittedCompany.length>120||/[\r\n]/.test(submittedCompany))throw new Error('会社名・屋号を120文字以内で入力してください。');
-  let total=0;
-  for(const f of snapshot.fields){if(!f.enabled||!['file','file_word','file_excel'].includes(f.type)||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id];if(!blob||!blob.getName?.()){if(f.required)throw new Error(f.label+'を添付してください。');continue;}const bytes=blob.getBytes();total+=bytes.length;if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');const ext=requirementUploadExtension_(f,blob,bytes);uploads.push({f,blob,ext});}
-  const lock=LockService.getScriptLock();lock.waitLock(20000);let folder;
-  try{const latest=readGrantInvitation_(String(form.inviteToken));if(latest.receipt)return {receipt:latest.receipt};if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
-    const receipt=Utilities.getUuid(),submittedAt=new Date().toISOString(),p=PropertiesService.getScriptProperties(),dest=p.getProperty('GRANT_SUBMISSION_FOLDER_ID');
-    folder=(dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(submittedCompany+' - '+snapshot.title+' - '+receipt);
-    uploads.forEach(({f,blob,ext})=>folder.createFile(blob.setName(f.label.replace(/[\\/]/g,'_')+'.'+ext)));
-    const historicalAnswers=latest.answerDraftId?JSON.parse(DriveApp.getFileById(latest.answerDraftId).getBlob().getDataAsString('UTF-8')).answers:{};
-    const record={historicalAnswers,schemaVersion:2,receipt,grant:invite.grant,company:submittedCompany,invitedCompany:invite.company,submittedAt,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderUrl:folder.getUrl()};
-    const file=folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);
-    latest.receipt=receipt;latest.folderUrl=folder.getUrl();accumulateSubmittedCompany_(latest,record);writeGrantInvitation_(String(form.inviteToken),latest);
-    p.setProperty('REQUIREMENT_RESPONSE_'+receipt,file.getId());return {receipt};
-  }finally{lock.releaseLock();}
+ if(!form||form.website)throw new Error('送信できません。');const token=String(form.inviteToken||''),invite=readGrantInvitation_(token);if(!invite.grant.startsWith('schema:'))throw new Error('受付リンクが無効です。');
+ const snapshot=resolveRequirementSnapshot_(invite);if(Number(form.revision)!==snapshot.revision)throw new Error('項目が更新されています。画面を再読み込みしてください。');
+ let raw;try{raw=JSON.parse(form.answersJson);}catch(_){throw new Error('入力内容を確認してください。');}
+ const answers=requirementAnswers_(snapshot.fields,raw);
+ if(answers.email&&answers.email.toLowerCase()!==invite.email.toLowerCase())throw new Error('案内先のメールアドレスと一致しません。');
+ const company=String(answers.company||invite.company).trim();if(!company||company.length>120||/[\r\n]/.test(company))throw new Error('会社名・屋号を120文字以内で入力してください。');
+ const lock=LockService.getScriptLock();lock.waitLock(20000);
+ try{
+  const latest=readGrantInvitation_(token),old=submittedRequirementRecord_(latest);
+  if(latest.receipt&&(form.submissionVersion===undefined||form.submissionRequestId&&latest.lastSubmissionRequestId===form.submissionRequestId))return {receipt:latest.receipt,submissionVersion:old?.submissionVersion||1,savedFiles:Object.keys(old?.documents||{})};
+  if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
+  if(Number(form.submissionVersion||0)!==Number(old?.submissionVersion||0))throw new Error('別の画面で更新されています。入力内容を控えてから再読み込みしてください。');
+  const p=PropertiesService.getScriptProperties(),dest=p.getProperty('GRANT_SUBMISSION_FOLDER_ID'),receipt=latest.receipt||Utilities.getUuid(),now=new Date().toISOString();
+  const folder=old?existingSubmissionFolder_(old.folderId,old.folderUrl):((dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(company+' - '+snapshot.title+' - '+receipt));
+  const previous=existingSubmissionDocuments_(folder,old?.documents||{},old?.definition?.fields||snapshot.fields),uploads=[],documents={...previous};let total=0;
+  for(const f of snapshot.fields){if(!f.enabled||!['file','file_word','file_excel'].includes(f.type)||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id],saved=previous[f.id];if(!blob||!blob.getName?.()){if(f.required&&!saved)throw new Error(f.label+'を添付してください。');if(saved)total+=Number(saved.size||0);continue;}const bytes=blob.getBytes(),ext=requirementUploadExtension_(f,blob,bytes);total+=bytes.length;if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');uploads.push({key:f.id,name:f.label.replace(/[\\/]/g,'_')+'.'+ext,blob,size:bytes.length,previous:saved});}
+  if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');
+  Object.assign(documents,replaceGrantSubmissionFiles_(folder,uploads));
+  const record={historicalAnswers:old?.historicalAnswers||{},schemaVersion:2,receipt,grant:invite.grant,company,invitedCompany:invite.company,submittedAt:old?.submittedAt||now,updatedAt:now,submissionVersion:Number(old?.submissionVersion||0)+1,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderId:folder.getId?.()||'',folderUrl:folder.getUrl(),documents};
+  const id=p.getProperty('REQUIREMENT_RESPONSE_'+receipt);const file=id?DriveApp.getFileById(id):folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);if(id)file.setContent(JSON.stringify(record));
+  latest.receipt=receipt;latest.folderUrl=folder.getUrl();latest.lastSubmissionRequestId=String(form.submissionRequestId||'');accumulateSubmittedCompany_(latest,{...record,receipt:receipt+':'+record.submissionVersion});writeGrantInvitation_(token,latest);p.setProperty('REQUIREMENT_RESPONSE_'+receipt,file.getId());
+  return {receipt,submissionVersion:record.submissionVersion,savedFiles:Object.keys(documents),updated:!!old};
+ }finally{lock.releaseLock();}
 }
 function requirementUploadExtension_(f,blob,bytes){
  const signature=bytes.map(x=>x&255);
