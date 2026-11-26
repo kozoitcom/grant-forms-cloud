@@ -423,14 +423,14 @@ function upsertSubmittedCompany_(invite,submission){
  if(!old){const matches=records.filter(r=>r.name.normalize('NFKC')===name.normalize('NFKC')&&r.profile?.email&&r.profile.email.toLowerCase()===email.toLowerCase());if(matches.length===1)old=matches[0];}
  const details=companyLedgerDetails_(old);if(details.lastReceipt===submission.receipt){invite.companyId=old.id;syncCompanyLedgerSheet_(records);return old.id;}
  const id=old?.id||Utilities.getUuid(),profile={...(old?.profile||{})},values={...(details.values||{})},fields=new Map((details.fields||[]).map(f=>[ledgerLabelKey_(f.label,f.type),f]));
- for(const [key,value] of Object.entries(submission.values||{})){if(value!==''&&value!==null&&value!==undefined)values[key]=String(value);}
+ for(const [key,value] of Object.entries(submission.values||{})){if((values[key]===undefined||values[key]===null||values[key]==='')&&value!==''&&value!==null&&value!==undefined)values[key]=String(value);}
  const common={industry:120,address:250,representative:120,representativeKana:120,person:80,phone:40,email:180};
- for(const [key,max]of Object.entries(common)){const value=String(submission.values?.[key]??'').trim();if(value)profile[key]=value.slice(0,max);}if(!profile.email&&email)profile.email=email;
- for(const f of submission.definition?.fields||[]){if(!f.enabled||['file','file_word','file_excel'].includes(f.type)||!Object.prototype.hasOwnProperty.call(submission.values||{},f.id))continue;const value=String(submission.values[f.id]??'');if(value!==''||f.type==='checkbox')fields.set(ledgerLabelKey_(f.label,f.type),{id:f.id,label:f.label,type:f.type,value,sourceGrant:submission.grant,updatedAt:submission.submittedAt});}
- let employees=details.employees||[];if(submission.employees?.length)employees=submission.employees;
- const data={values,fields:[...fields.values()],employees,genderCounts:submission.genderCounts||details.genderCounts||null,lastReceipt:submission.receipt,updatedAt:submission.submittedAt};
+ for(const [key,max]of Object.entries(common)){const value=String(submission.values?.[key]??'').trim();if(!profile[key]&&value)profile[key]=value.slice(0,max);}if(!profile.email&&email)profile.email=email;
+ for(const f of submission.definition?.fields||[]){if(!f.enabled||['file','file_word','file_excel'].includes(f.type)||!Object.prototype.hasOwnProperty.call(submission.values||{},f.id))continue;const value=String(submission.values[f.id]??'');if(!fields.has(ledgerLabelKey_(f.label,f.type))&&(value!==''||f.type==='checkbox'))fields.set(ledgerLabelKey_(f.label,f.type),{id:f.id,label:f.label,type:f.type,value,sourceGrant:submission.grant,updatedAt:submission.submittedAt});}
+ let employees=details.employees||[];if(!employees.length&&submission.employees?.length)employees=submission.employees;
+ const data={values,fields:[...fields.values()],employees,genderCounts:details.genderCounts||submission.genderCounts||null,lastReceipt:submission.receipt,updatedAt:submission.submittedAt};
  let detailFileId=old?.detailFileId;if(detailFileId)DriveApp.getFileById(detailFileId).setContent(JSON.stringify(data));else{const destination=PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_FOLDER_ID');const folder=destination?DriveApp.getFolderById(destination):requirementStore_(true);detailFileId=folder.createFile('company-data-'+id+'.json',JSON.stringify(data),MimeType.PLAIN_TEXT).getId();}
- const record={...(old||{}),id,name,profile,entries:old?.entries||[],detailFileId,lastSubmissionReceipt:submission.receipt,updatedAt:submission.submittedAt};
+ const record={...(old||{}),id,name:old?.name||name,profile,entries:old?.entries||[],detailFileId,lastSubmissionReceipt:submission.receipt,updatedAt:submission.submittedAt};
  const json=JSON.stringify(record);if(Utilities.newBlob(json).getBytes().length>8500)throw Error('会社台帳の基本情報が長すぎます。');
  PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+id,json);invite.companyId=id;syncCompanyLedgerSheet_([...records.filter(r=>r.id!==id),record]);return id;
 }
