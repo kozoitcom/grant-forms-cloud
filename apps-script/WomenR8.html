@@ -22,7 +22,7 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <? if (invitation) { ?><p>提出先の案内対象企業 <?= invitation.company ?></p><? } ?>
 <? if (previewMode) { ?><section aria-label="管理者プレビュー"><strong>管理者プレビュー</strong><p>申請者に表示される入力画面です。入力の確認はできますが、この画面から送信はできません。</p></section><? } ?>
 <form id="form">
-<input type="hidden" name="previewMode" value="<?= previewMode ? 'true' : 'false' ?>">
+<input type="hidden" name="submissionVersion"><input type="hidden" name="submissionRequestId"><input type="hidden" name="previewMode" value="<?= previewMode ? 'true' : 'false' ?>">
 <input type="hidden" name="inviteToken" value="<?= inviteToken ?>">
 <section><h2>事業者・担当者情報</h2>
 <div class="grid">
@@ -77,7 +77,7 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <script>
 const initialForm = JSON.parse(document.getElementById('initial-form-data').textContent);
 const form = document.getElementById('form');
-const button = form.querySelector('button[type=submit]');
+const button = form.querySelector('button[type=submit]');form.elements.submissionVersion.value=initialForm.submissionVersion||0;form.elements.submissionRequestId.value=crypto.randomUUID();
 const status = document.getElementById('status');
 const employeeRows = document.getElementById('employee-rows');
 function addEmployee(employee = {}) {
@@ -161,7 +161,7 @@ function updateDocuments() {
     const input = row.querySelector('input, select');
     const uploadNotRequired = row.dataset.uploadNotRequired === 'yes';
     input.disabled = !shown || uploadNotRequired;
-    input.required = shown && !uploadNotRequired;
+    input.required = shown && !uploadNotRequired && !(input.type==='file'&&(initialForm.savedFiles||[]).includes(input.name));
     row.style.opacity = uploadNotRequired ? '0.5' : '1';
   });
 }
@@ -182,11 +182,7 @@ form.addEventListener('submit', event => {
   status.textContent = '書類を送信しています…';
   google.script.run.withSuccessHandler(result => {
     status.textContent = '受付が完了しました。受付ID ' + result.receipt;
-    form.reset();
-    employeeRows.replaceChildren();
-    addEmployee();
-    updateGenderCounts();
-    updateDocuments();
+    form.elements.submissionVersion.value=result.submissionVersion||1;form.elements.submissionRequestId.value=crypto.randomUUID();initialForm.savedFiles=result.savedFiles||[];for(const input of form.querySelectorAll('input[type=file]'))input.value='';updateDocuments();status.textContent=(result.updated?'既存のデータを更新しました。':'受付が完了しました。')+'受付ID '+result.receipt;button.textContent='入力内容・書類を更新して送信';
     button.disabled = false;
   }).withFailureHandler(error => {
     status.textContent = error.message || '送信できませんでした。';
@@ -194,5 +190,6 @@ form.addEventListener('submit', event => {
   }).submitWomenR8(form);
 });
 updateDocuments();
+if(initialForm.submitted){status.textContent='提出済みです。修正して再送信すると同じ保存先の内容を更新します。添付は差し替えるものだけ選択してください。';button.textContent='入力内容・書類を更新して送信';}
 if (initialForm.preview) { button.disabled = true; button.textContent = 'プレビューのため送信できません'; }
 </script></body></html>
