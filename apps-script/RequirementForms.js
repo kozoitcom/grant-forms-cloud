@@ -130,10 +130,11 @@ function submitRequirementApplication(form){
   if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
   if(Number(form.submissionVersion||0)!==Number(old?.submissionVersion||0))throw new Error('別の画面で更新されています。入力内容を控えてから再読み込みしてください。');
   const p=PropertiesService.getScriptProperties(),dest=p.getProperty('GRANT_SUBMISSION_FOLDER_ID'),receipt=latest.receipt||Utilities.getUuid(),now=new Date().toISOString();
-  const folder=old?existingSubmissionFolder_(old.folderId,old.folderUrl):((dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(company+' - '+snapshot.title+' - '+receipt));
-  const previous=existingSubmissionDocuments_(folder,old?.documents||{},old?.definition?.fields||snapshot.fields),uploads=[],documents={...previous};let total=0;
+  let folder=old?existingSubmissionFolder_(old.folderId,old.folderUrl):null;
+  const previous=old?existingSubmissionDocuments_(folder,old.documents||{},old.definition?.fields||snapshot.fields):{},uploads=[],documents={...previous};let total=0;
   for(const f of snapshot.fields){if(!f.enabled||!['file','file_word','file_excel'].includes(f.type)||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id],saved=previous[f.id];if(!blob||!blob.getName?.()){if(f.required&&!saved)throw new Error(f.label+'を添付してください。');if(saved)total+=Number(saved.size||0);continue;}const bytes=blob.getBytes(),ext=requirementUploadExtension_(f,blob,bytes);total+=bytes.length;if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');uploads.push({key:f.id,name:f.label.replace(/[\\/]/g,'_')+'.'+ext,blob,size:bytes.length,previous:saved});}
   if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');
+  if(!folder)folder=(dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(company+' - '+snapshot.title+' - '+receipt);
   Object.assign(documents,replaceGrantSubmissionFiles_(folder,uploads));
   const record={historicalAnswers:old?.historicalAnswers||{},schemaVersion:2,receipt,grant:invite.grant,company,invitedCompany:invite.company,submittedAt:old?.submittedAt||now,updatedAt:now,submissionVersion:Number(old?.submissionVersion||0)+1,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderId:folder.getId?.()||'',folderUrl:folder.getUrl(),documents};
   const id=p.getProperty('REQUIREMENT_RESPONSE_'+receipt);const file=id?DriveApp.getFileById(id):folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);if(id)file.setContent(JSON.stringify(record));
@@ -261,4 +262,20 @@ function getBasicRequirementFields(batchId){
  const docs=batch.grant==='women-r8'?WOMEN_R8_DOCUMENTS.map(([key,title])=>({key,title})):batch.files.filter(f=>!f.deletedAt&&f.role!=='guidelines').map((f,i)=>({key:String(i),title:f.documentTitle}));
  const seen=new Set();for(const doc of docs){if(seen.has(doc.title))continue;seen.add(doc.title);fields.push({id:'document_'+fields.length,label:doc.title,type:'file',required:false,enabled:true,options:[],stages:['application'],source:'登録書類名・既存の書類一覧（資料本文は未解析）',help:'提出の要否・ファイル形式は管理者が募集要項と照合してください。',target:doc.title,condition:null});}
  return {fields:requirementFields_(fields),message:'基本項目と書類名から項目案を作成しました。募集要項本文は解析していません。必須条件・不足項目を確認して保存してください。'};
+}
+
+function existingSubmissionFolder_(id,url){const parsed=String(url||'').match(/\/folders\/([A-Za-z0-9_-]+)/);const folderId=id||parsed?.[1];if(!folderId)throw Error('既存の提出フォルダを確認できません。担当者にご連絡ください。');const folder=DriveApp.getFolderById(folderId);if(folder.isTrashed?.())throw Error('提出フォルダが削除されています。');return folder;}
+function existingSubmissionDocuments_(folder,documents,fields){
+ const out={};for(const [key,d]of Object.entries(documents||{})){try{const file=DriveApp.getFileById(d.fileId);if(!file.isTrashed())out[key]={...d,size:file.getSize?.()||d.size||0};}catch(_){}}
+ for(const f of fields||[]){if(out[f.id]||!['file','file_word','file_excel'].includes(f.type)||!folder.getFilesByName)continue;const base=f.label.replace(/[\\/]/g,'_');for(const ext of ['pdf','docx','doc','xlsx','xls']){const files=folder.getFilesByName(base+'.'+ext);if(files.hasNext()){const file=files.next();out[f.id]={fileId:file.getId(),name:base+'.'+ext,size:file.getSize?.()||0};break;}}}return out;
+}
+/** Stage replacements before retiring old files; replaced copies remain recoverable in Trash. */
+function replaceGrantSubmissionFiles_(folder,uploads){
+ const created=[],retired=[],result={};try{
+  for(const upload of uploads){const blob=upload.blob.copyBlob?upload.blob.copyBlob():upload.blob;const file=folder.createFile(blob.setName('_更新中_'+upload.name));created.push({file,upload});}
+  for(const {file,upload}of created){const oldFiles=new Map();if(upload.previous?.fileId){try{const old=DriveApp.getFileById(upload.previous.fileId);if(!old.isTrashed())oldFiles.set(old.getId(),old);}catch(_){}}
+   if(folder.getFilesByName){const files=folder.getFilesByName(upload.name);while(files.hasNext()){const old=files.next();if(old.getId()!==file.getId())oldFiles.set(old.getId(),old);}}
+   for(const old of oldFiles.values()){old.setTrashed(true);retired.push(old);}file.setName(upload.name);result[upload.key]={fileId:file.getId(),name:upload.name,size:upload.size};
+  }return result;
+ }catch(error){for(const old of retired){try{old.setTrashed(false);}catch(_){}}for(const {file}of created){try{file.setTrashed(true);}catch(_){}}throw error;}
 }
