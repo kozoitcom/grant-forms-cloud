@@ -62,11 +62,11 @@ function createRequirementInvitation_(input){
   const d=requirementRead_(input.grant.slice(7));if(!d.published)throw new Error('先に必要項目を公開してください。');
   const company=String(input.company||'').trim(),email=String(input.email||'').trim();
   if(!company||company.length>120||/[\r\n]/.test(company)||email.length>180||!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email))throw new Error('会社名・メールを確認してください。');
-  const prefill=applicantPrefill_(input.companyId,input.sourceReceipt);if(prefill.company&&prefill.company!==company)throw new Error('会社を選び直してください。');
+  const prefill=applicantPrefill_(input.companyId,input.sourceReceipt,input.grant);if(prefill.company&&prefill.company!==company)throw new Error('会社を選び直してください。');
   prefill.company=company;prefill.email=email;
   const snapshot=requirementStore_(true).createFile('invite-'+Utilities.getUuid()+'.json',JSON.stringify(d.published),MimeType.PLAIN_TEXT);
   const token=(Utilities.getUuid()+Utilities.getUuid()).replace(/-/g,''),createdAt=Date.now();
-  const invite={grant:input.grant,company,email,createdAt,expiresAt:createdAt+30*86400000,requirementBaseId:snapshot.getId(),requirementRevision:d.published.revision,prefillFileId:saveApplicantPrefill_(prefill)};
+  const invite={companyId:input.companyId||'',grant:input.grant,company,email,createdAt,expiresAt:createdAt+30*86400000,requirementBaseId:snapshot.getId(),requirementRevision:d.published.revision,prefillFileId:saveApplicantPrefill_(prefill)};
   writeGrantInvitation_(token,invite);return {token,...grantInvitationMessage_(token,invite)};
 }
 function resolveRequirementSnapshot_(invite){
@@ -77,7 +77,7 @@ function resolveRequirementSnapshot_(invite){
 function requirementPage_(params){
   let invite=null,snapshot,values={};
   if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=readApplicantInvitationPrefill_(invite);if(invite.answerDraftId)Object.assign(values,JSON.parse(DriveApp.getFileById(invite.answerDraftId).getBlob().getDataAsString('UTF-8')).answers);}
-  else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt);}
+  else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt,params.grant);}
   const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt}).replace(/</g,'\\u003c');
   return p.evaluate().setTitle(snapshot.title+' | 申請フォーム').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
@@ -132,7 +132,7 @@ function submitRequirementApplication(form){
     const historicalAnswers=latest.answerDraftId?JSON.parse(DriveApp.getFileById(latest.answerDraftId).getBlob().getDataAsString('UTF-8')).answers:{};
     const record={historicalAnswers,schemaVersion:2,receipt,grant:invite.grant,company:submittedCompany,invitedCompany:invite.company,submittedAt,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderUrl:folder.getUrl()};
     const file=folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);
-    latest.receipt=receipt;latest.folderUrl=folder.getUrl();writeGrantInvitation_(String(form.inviteToken),latest);
+    latest.receipt=receipt;latest.folderUrl=folder.getUrl();accumulateSubmittedCompany_(latest,record);writeGrantInvitation_(String(form.inviteToken),latest);
     p.setProperty('REQUIREMENT_RESPONSE_'+receipt,file.getId());return {receipt};
   }finally{lock.releaseLock();}
 }
