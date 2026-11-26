@@ -1,5 +1,5 @@
 /** System 4: real applicant form previews and immutable invitation prefills. */
-function applicantPrefill_(companyId, sourceReceipt) {
+function applicantPrefill_(companyId, sourceReceipt, grant) {
   requireGrantAdmin_();
   companyId = String(companyId || '');
   sourceReceipt = String(sourceReceipt || '');
@@ -13,7 +13,13 @@ function applicantPrefill_(companyId, sourceReceipt) {
       if (values[key] !== undefined) prefill[key] = String(values[key] || '').trim().slice(0,max);
     }
   };
-  if (record) { copyValues(record.profile || {}); prefill.company = record.name; }
+  if (record) {
+ copyValues(record.profile||{});prefill.company=record.name;
+ const details=companyLedgerDetails_(record);
+ for(const key of ['entity','location','otherCity','workersMale','workersFemale','chiefsMale','chiefsFemale','managersMale','managersFemale','officersMale','officersFemale'])if(details.values?.[key]!==undefined)prefill[key]=details.values[key];
+ if(details.employees?.length)prefill.employees=details.employees;
+ if(String(grant||'').startsWith('schema:')){const definition=requirementRead_(grant.slice(7)),fields=definition.published?.fields||definition.fields||[];for(const f of fields){if(['file','file_word','file_excel'].includes(f.type)||!f.enabled)continue;const matches=(details.fields||[]).filter(old=>ledgerLabelKey_(old.label,old.type)===ledgerLabelKey_(f.label,f.type));if(matches.length===1)prefill[f.id]=matches[0].value;}}
+ }
   if (sourceReceipt) {
     const application = collectionExport_(sourceReceipt);
     if (record && record.name !== application.company) throw new Error('会社台帳と申請データの会社が一致しません。');
@@ -40,7 +46,7 @@ function getApplicantFormPreview(input) {
   requireGrantAdmin_();
   if (input && String(input.grant).startsWith('schema:')) {
     const definition = requirementRead_(input.grant.slice(7));
-    applicantPrefill_(input.companyId,input.sourceReceipt);
+    applicantPrefill_(input.companyId,input.sourceReceipt,input.grant);
     return {url:ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec')+'?grant='+encodeURIComponent(input.grant)+'&preview=1&v='+definition.revision+(input.companyId?'&companyId='+encodeURIComponent(input.companyId):'')+(input.sourceReceipt?'&sourceReceipt='+encodeURIComponent(input.sourceReceipt):'')};
   }
   if (!input || input.grant !== 'women-r8') throw new Error('助成金を選び直してください。');
