@@ -134,10 +134,25 @@ $('req-analyze').onclick=()=>run(async()=>{
   throw error;
  }finally{if(timer)clearInterval(timer);}
 });
-$('req-save').onclick=()=>run(async()=>{if(candidates.length)throw Error('未反映の解析候補が'+candidates.length+'件あります。「解析候補をまとめて反映」または候補ごとの操作を選んでから保存してください。');draft=await rpc('saveRequirementForm',{...draft,title:$('req-title').value,year:$('req-year').value});render();dirty=false;await refresh();$('req-def').value=draft.id;$('req-save-state').textContent='項目を保存しました（第'+draft.revision+'版）。画面を閉じても残ります。';status('項目を保存しました：第'+draft.revision+'版');});
+async function saveCurrentRequirements(){
+ if(candidates.length)throw Error('未反映の解析候補があります。候補を反映してから保存してください。');
+ const title=$('req-title').value.trim(),year=$('req-year').value.trim();
+ if(!title||!year)throw Error('助成金名と年度を入力してから保存・公開してください。');
+ $('req-save-state').textContent='項目を保存中…';
+ try{const saved=await rpc('saveRequirementForm',{...draft,title,year});if(!saved?.id||!saved.revision)throw Error('保存結果を確認できませんでした。もう一度保存してください。');draft=saved;dirty=false;render();$('req-save-state').textContent='項目を保存しました（第'+draft.revision+'版）。画面を閉じても残ります。';status('項目を保存しました：第'+draft.revision+'版');await refresh();$('req-def').value=draft.id;return saved;}catch(e){$('req-save-state').textContent='保存を確認してください：'+e.message;throw e;}
+}
+$('req-save').onclick=()=>run(saveCurrentRequirements);
 $('req-save-top').onclick=()=> $('req-save').onclick();
 $('req-preview').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');const r=await rpc('getApplicantFormPreview',{grant:'schema:'+draft.id});$('req-preview-link').href=r.url;$('req-preview-link').hidden=false;});
-$('req-publish').onclick=()=>run(async()=>{if(!draft.id||dirty)throw Error('先に下書きを保存してください。');if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});status('第'+r.revision+'版を指定した範囲へ公開しました。④から会社別リンクを発行できます。');await refresh();});
+$('req-publish').onclick=()=>run(async()=>{
+ if(candidates.length)throw Error('未確認の候補を採用・統合・不採用から選んでください。');
+ if(!$('req-reviewed').checked)throw Error('資料との照合確認にチェックしてください。');
+ if(!draft.id||dirty)await saveCurrentRequirements();
+ status('第'+draft.revision+'版を公開中…');
+ const r=await rpc('publishRequirementForm',{id:draft.id,revision:draft.revision,scope:$('req-scope').value,historyId:$('req-company').value});
+ status('第'+r.revision+'版を指定した範囲へ公開しました。下の「申請者へ送る会社別リンク」から発行できます。');
+ draft=await rpc('getRequirementForm',draft.id);dirty=false;await refresh();
+});
 function showGptSettings(r){$('req-ai-model').value=r.model||'gpt-6.1-terra';$('req-analysis').textContent=r.configured?'GPT接続設定あり。資料を選択して解析できます。':'GPT接続は未設定です。下の「GPT接続設定」でOpenAI APIキーを保存してください。';}
 $('req-ai-save').onclick=()=>run(async()=>{const input={key:$('req-ai-key').value,model:$('req-ai-model').value};$('req-ai-settings-status').textContent='保存中…';try{const result=await rpc('saveOpenAiRequirementSettings',input);showGptSettings(result);$('req-ai-settings-status').textContent='保存しました。GPT接続を確認中…';const test=await rpc('authorizeGrantAiConnection');$('req-ai-settings-status').textContent=test.message;}catch(error){$('req-ai-settings-status').textContent=error.message;throw error;}});
 rpc('getOpenAiRequirementSettings').then(r=>{showGptSettings(r);$('req-ai-key').value=r.key||'';}).catch(e=>status(e.message));
