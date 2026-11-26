@@ -242,6 +242,7 @@ function saveCompanyNumbers(input) {
       .map(([key, [, max]]) => [key, String(input.profile?.[key] || '').trim().slice(0, max)]));
     const json = JSON.stringify({id: recordId, name, entries, profile});
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
+    syncCompanyLedgerSheet_([...records.filter(record=>record.id!==recordId),JSON.parse(json)]);
     props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
     return recordId;
   } finally {
@@ -371,4 +372,39 @@ function collectionExport_(receipt) {
       person:text(row[6]), email:text(row[7]), phone:text(row[8]), note:text(row[9]),
       location:text(row[10]), otherCity:text(row[11]), representativeKana:text(row[14]), industry:text(row[17])},
     genderCounts:json(row[15], null), employees:json(row[16], [])};
+}
+
+/** Drive spreadsheet is a readable synchronized copy; existing ledger APIs remain compatible. */
+function companyLedgerRows_(records){
+ const extra=[...new Set(records.flatMap(r=>(r.entries||[]).map(e=>String(e[0]))))].sort();
+ const headers=['会社ID','会社名','業種','事業所所在地','代表者の役職・氏名','代表者のふりがな','担当者名','電話番号',...extra.map(x=>'管理項目：'+x)];
+ const safe=value=>{const s=String(value??'');return /^[=+@-]/.test(s)?"'"+s:s;};
+ return [headers,...records.map(r=>{const p=r.profile||{},entries=new Map(r.entries||[]);return [r.id,r.name,p.industry,p.address,p.representative,p.representativeKana,p.person,p.phone,...extra.map(x=>entries.get(x)||'')].map(safe);})];
+}
+function syncCompanyLedgerSheet_(records,spreadsheetId){
+ const id=spreadsheetId||PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_SPREADSHEET_ID');if(!id)return;
+ const book=SpreadsheetApp.openById(id),sheet=book.getSheetByName('会社台帳')||book.insertSheet('会社台帳'),rows=companyLedgerRows_(records);
+ if(sheet.getMaxColumns()<rows[0].length)sheet.insertColumnsAfter(sheet.getMaxColumns(),rows[0].length-sheet.getMaxColumns());
+ if(sheet.getMaxRows()<rows.length)sheet.insertRowsAfter(sheet.getMaxRows(),rows.length-sheet.getMaxRows());
+ const previousRows=sheet.getLastRow(),previousColumns=sheet.getLastColumn();
+ sheet.getRange(1,1,rows.length,rows[0].length).setNumberFormat('@').setValues(rows);
+ if(previousRows>rows.length)sheet.getRange(rows.length+1,1,previousRows-rows.length,Math.max(previousColumns,rows[0].length)).clearContent();
+ if(previousColumns>rows[0].length)sheet.getRange(1,rows[0].length+1,rows.length,previousColumns-rows[0].length).clearContent();
+ sheet.setFrozenRows(1);SpreadsheetApp.flush();
+}
+function getCompanyLedgerStorageSettings(){
+ requireGrantAdmin_();const p=PropertiesService.getScriptProperties(),folderId=p.getProperty('COMPANY_LEDGER_FOLDER_ID'),sheetId=p.getProperty('COMPANY_LEDGER_SPREADSHEET_ID');
+ if(!folderId)return {url:'',name:'未設定',spreadsheetUrl:''};
+ const folder=DriveApp.getFolderById(folderId);return {url:folder.getUrl(),name:folder.getName(),spreadsheetUrl:sheetId?SpreadsheetApp.openById(sheetId).getUrl():''};
+}
+function saveCompanyLedgerStorageSettings(input){
+ requireGrantAdmin_();const value=String(input||'').trim(),match=value.match(/^https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([A-Za-z0-9_-]+)(?:[?/#].*)?$/),id=match?match[1]:(/^[A-Za-z0-9_-]{10,}$/.test(value)?value:'');
+ if(!id)throw new Error('会社台帳の保存先フォルダURLを入力してください。');
+ const folder=DriveApp.getFolderById(id);if(folder.isTrashed())throw new Error('削除済みのフォルダは指定できません。');
+ const probe=folder.createFile('会社台帳 - 保存先確認.txt','書き込み確認',MimeType.PLAIN_TEXT);probe.setTrashed(true);
+ const lock=LockService.getScriptLock();lock.waitLock(20000);let created;
+ try{const p=PropertiesService.getScriptProperties();let sheetId=p.getProperty('COMPANY_LEDGER_SPREADSHEET_ID');if(!sheetId){const book=SpreadsheetApp.create('Grant Forms Cloud - 会社台帳');sheetId=book.getId();created=DriveApp.getFileById(sheetId);}
+ syncCompanyLedgerSheet_(listCompanyNumbers(),sheetId);DriveApp.getFileById(sheetId).moveTo(folder);p.setProperty('COMPANY_LEDGER_FOLDER_ID',id);p.setProperty('COMPANY_LEDGER_SPREADSHEET_ID',sheetId);
+ return getCompanyLedgerStorageSettings();
+ }catch(error){if(created){try{created.setTrashed(true);}catch(_){}}throw new Error('会社台帳の保存先を設定できませんでした。フォルダの編集権限を確認してください。');}finally{lock.releaseLock();}
 }
