@@ -1,5 +1,10 @@
 <p>会社台帳・入力データ・提出書類・案内履歴を管理します。フォーム確認とリンク発行は①の画面下部から行います。保存した申請データを③で利用します。</p>
-<section><h2>会社台帳一覧</h2>
+<section><h2>会社台帳スプレッドシートの保存先</h2>
+<p>会社台帳専用のGoogle Driveフォルダを指定してください。現在の台帳から「Grant Forms Cloud - 会社台帳」を作成し、以後は管理画面で会社情報を保存するたびに更新します。申請書類の保存先とは別に指定できます。</p>
+<form id="ledger-storage-settings"><label for="ledger-storage-folder">会社台帳の保存先フォルダURL</label><input id="ledger-storage-folder" type="url" placeholder="https://drive.google.com/drive/folders/..." required><button type="submit">会社台帳の保存先を設定</button></form>
+<p id="ledger-storage-status" role="status"></p><p><a id="ledger-storage-open" target="_blank" rel="noopener noreferrer" hidden>保存先フォルダを開く</a>　<a id="ledger-sheet-open" target="_blank" rel="noopener noreferrer" hidden>会社台帳スプレッドシートを開く</a></p>
+<p>会社情報の編集は下の管理画面から行ってください。スプレッドシートを直接編集した内容は、管理画面へは取り込みません。</p>
+</section><section><h2>会社台帳一覧</h2>
 <label for="ledger-search">会社名で検索</label><input id="ledger-search" type="search" placeholder="会社名を入力">
 <p id="ledger-status" role="status"></p><div id="ledger-list"></div>
 </section>
@@ -33,6 +38,11 @@
 <p id="storage-status" role="status"></p><a id="storage-link" target="_blank" rel="noopener noreferrer" hidden>保存先フォルダを開く</a>
 </section>
 <script>
+
+function showLedgerStorage(settings){document.getElementById('ledger-storage-folder').value=settings.url||'';for(const [id,url]of [['ledger-storage-open',settings.url],['ledger-sheet-open',settings.spreadsheetUrl]]){const link=document.getElementById(id);link.hidden=!url;if(url)link.href=url;}document.getElementById('ledger-storage-status').textContent='現在の保存先：'+settings.name;}
+google.script.run.withSuccessHandler(showLedgerStorage).withFailureHandler(e=>{document.getElementById('ledger-storage-status').textContent=e.message;}).getCompanyLedgerStorageSettings();
+document.getElementById('ledger-storage-settings').addEventListener('submit',event=>{event.preventDefault();const button=event.currentTarget.querySelector('button'),message=document.getElementById('ledger-storage-status');button.disabled=true;message.textContent='保存先を確認し、現在の会社台帳を保存中…';google.script.run.withSuccessHandler(settings=>{button.disabled=false;showLedgerStorage(settings);message.textContent='現在の会社台帳を指定フォルダへ保存しました。今後の会社情報の保存も反映されます。';}).withFailureHandler(e=>{button.disabled=false;message.textContent=e.message;}).saveCompanyLedgerStorageSettings(document.getElementById('ledger-storage-folder').value);});
+
 
 const storageForm = document.getElementById('storage-settings');
 const storageStatus = document.getElementById('storage-status');
