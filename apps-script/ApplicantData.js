@@ -375,10 +375,11 @@ function collectionExport_(receipt) {
 
 /** Drive spreadsheet is a readable synchronized copy; existing ledger APIs remain compatible. */
 function companyLedgerRows_(records){
- const extra=[...new Set(records.flatMap(r=>(r.entries||[]).map(e=>String(e[0]))))].sort();
- const headers=['会社ID','会社名','業種','事業所所在地','代表者の役職・氏名','代表者のふりがな','担当者名','電話番号',...extra.map(x=>'管理項目：'+x)];
+ const extra=[...new Set(records.flatMap(r=>(r.entries||[]).map(e=>String(e[0]))))].sort(),details=records.map(companyLedgerDetails_);
+ const fields=new Map();for(const d of details)for(const f of d.fields||[])fields.set(ledgerLabelKey_(f.label,f.type),f);
+ const keys=[...fields.keys()],headers=['会社ID','会社名','業種','事業所所在地','代表者の役職・氏名','代表者のふりがな','担当者名','電話番号',...extra.map(x=>'管理項目：'+x),'メールアドレス','従業員一覧','最終更新',...keys.map(k=>'蓄積項目：'+fields.get(k).label+'（'+fields.get(k).type+'）')];
  const safe=value=>{const s=String(value??'');return /^[=+@-]/.test(s)?"'"+s:s;};
- return [headers,...records.map(r=>{const p=r.profile||{},entries=new Map(r.entries||[]);return [r.id,r.name,p.industry,p.address,p.representative,p.representativeKana,p.person,p.phone,...extra.map(x=>entries.get(x)||'')].map(safe);})];
+ return [headers,...records.map((r,i)=>{const p=r.profile||{},entries=new Map(r.entries||[]),d=details[i],answers=new Map((d.fields||[]).map(f=>[ledgerLabelKey_(f.label,f.type),f.value]));return [r.id,r.name,p.industry,p.address,p.representative,p.representativeKana,p.person,p.phone,...extra.map(x=>entries.get(x)||''),p.email,d.employees?.length?JSON.stringify(d.employees):'',d.updatedAt||'',...keys.map(k=>answers.get(k)||'')].map(safe);})];
 }
 function syncCompanyLedgerSheet_(records,spreadsheetId){
  const id=spreadsheetId||PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_SPREADSHEET_ID');if(!id)return;
