@@ -12,8 +12,7 @@ function doGet(event) {
     const systems = [
       {id:'setup', title:'① 助成金・様式設定', file:'GrantSetupView'},
       {id:'applications', title:'② 申請データ・会社台帳', file:'ApplicantDataView'},
-      {id:'transfer', title:'③ AI転記・書類作成', file:'DocumentTransferView'},
-      {id:'forms', title:'④ 申請者フォーム・リンク発行', file:'ApplicantFormsView'}
+      {id:'transfer', title:'③ AI転記・書類作成', file:'DocumentTransferView'}
     ];
     const selected = systems.find(item => item.id === params.system) || systems[0];
     const page = HtmlService.createTemplateFromFile('GrantAdmin');
