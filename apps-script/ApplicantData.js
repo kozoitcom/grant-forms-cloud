@@ -440,3 +440,34 @@ function retrySubmittedCompanyLedger(historyId){
  const lock=LockService.getScriptLock();lock.waitLock(20000);try{const props=PropertiesService.getScriptProperties(),raw=props.getProperty(historyId);if(!raw)throw Error('申請履歴が見つかりません。');const invite=JSON.parse(raw);if(!invite.receipt)throw Error('提出済みの申請を選択してください。');const submission=collectionExport_(invite.receipt);upsertSubmittedCompany_(invite,{...submission,receipt:submission.receipt+':'+(submission.submissionVersion||invite.submissionVersion||1)});invite.ledgerSyncPending=false;delete invite.ledgerSyncError;props.setProperty(historyId,JSON.stringify(invite));return true;}finally{lock.releaseLock();}
 }
 
+
+/** Multiple exact label aliases per company and source field; admin-only editing. */
+function companyAliasSources_(record){
+ const common=[['company','会社名','text'],['industry','業種','text'],['address','事業所所在地','text'],['representative','代表者の役職・氏名','text'],['representativeKana','代表者のふりがな','text'],['person','担当者名','text'],['phone','電話番号','text'],['email','メールアドレス','email']];
+ const sources=common.map(([id,label,type])=>({key:'common:'+id,label,type,value:id==='company'?record.name:record.profile?.[id]}));
+ const commonIds=new Set(common.map(x=>x[0]));
+ for(const f of companyLedgerDetails_(record).fields||[])if(!commonIds.has(f.id))sources.push({key:'field:'+ledgerLabelKey_(f.label,f.type),label:f.label,type:f.type,value:f.value});
+ for(const [label,value]of record.entries||[])sources.push({key:'entry:'+label,label,type:'text',value});
+ return sources;
+}
+function getCompanyFieldAliases(companyId){
+ requireGrantAdmin_();const record=companyLedgerRecords_().find(r=>r.id===companyId);if(!record)throw Error('会社台帳から会社を選択してください。');
+ return companyAliasSources_(record).map(({value,...s})=>({...s,aliases:record.fieldAliases?.[s.key]||[]}));
+}
+function saveCompanyFieldAliases(input){
+ requireGrantAdmin_();if(!input||!Array.isArray(input.fields)||input.fields.length>500)throw Error('別名の入力内容を確認してください。');
+ const lock=LockService.getScriptLock();lock.waitLock(20000);try{
+ const records=companyLedgerRecords_(),record=records.find(r=>r.id===input.companyId);if(!record)throw Error('会社台帳から会社を選択してください。');
+ const sources=companyAliasSources_(record),byKey=new Map(sources.map(s=>[s.key,s])),aliases={},seen=new Set();
+ for(const item of input.fields){if(!byKey.has(item.key)||seen.has(item.key))throw Error('項目を読み込み直してください。');seen.add(item.key);
+ const lines=Array.isArray(item.aliases)?item.aliases:String(item.aliases||'').split(/\r?\n/);
+ if(lines.length>30)throw Error('別名は1項目につき30件以内にしてください。');
+ const names=[...new Set(lines.map(s=>String(s).trim()).filter(Boolean))];if(names.some(s=>s.length>80))throw Error('別名は80文字以内で入力してください。');aliases[item.key]=names;
+ }
+ const owners=new Map();for(const s of sources)for(const name of [s.label,...(aliases[s.key]||record.fieldAliases?.[s.key]||[])]){
+ const key=ledgerLabelKey_(name,s.type),owner=owners.get(key);if(owner&&owner!==s.key)throw Error('同じ別名が複数の項目に対応しています：'+name);owners.set(key,s.key);
+ }
+ const updated={...record,fieldAliases:{...(record.fieldAliases||{}),...aliases}},json=JSON.stringify(updated);if(Utilities.newBlob(json).getBytes().length>8500)throw Error('別名の登録量が多すぎます。');
+ syncCompanyLedgerSheet_(records.map(r=>r.id===record.id?updated:r));PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+record.id,json);return true;
+ }finally{lock.releaseLock();}
+}
