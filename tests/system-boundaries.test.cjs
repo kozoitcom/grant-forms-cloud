@@ -31,10 +31,10 @@ function harness() {
 }
 test('each system loads its own view; unknown route safely selects setup',()=>{
   const {context}=harness();
-  for(const [system,view] of [['setup','GrantSetupView'],['applications','ApplicantDataView'],['transfer','DocumentTransferView'],['forms','ApplicantFormsView'],['<script>','GrantSetupView']]) {
+  for(const [system,view] of [['setup','GrantSetupView'],['applications','ApplicantDataView'],['transfer','DocumentTransferView'],['forms','GrantSetupView'],['<script>','GrantSetupView']]) {
     const page=context.doGet({parameter:{page:'admin',system}}).template;
     assert.equal(page.systemFile,view);
-    assert.equal(page.systems.length,4);
+    assert.equal(page.systems.length,3);
   }
 });
 test('views and scripts are separate and do not include other systems form controls',()=>{
