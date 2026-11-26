@@ -1,6 +1,6 @@
 <p>会社台帳・入力データ・提出書類・案内履歴を管理します。フォーム確認とリンク発行は①の画面下部から行います。保存した申請データを③で利用します。</p>
 <section><h2>会社台帳スプレッドシートの保存先</h2>
-<p>会社台帳専用のGoogle Driveフォルダを指定してください。現在の台帳から「Grant Forms Cloud - 会社台帳」を作成し、以後は管理画面で会社情報を保存するたびに更新します。申請書類の保存先とは別に指定できます。</p>
+<p>申請者の送信時に会社台帳を追加・更新します。新規会社は台帳を作成し、会社台帳を選んで発行したリンクは同じ会社IDへ更新します。空欄で既存情報を消しません。新しい助成金では台帳を選ぶと蓄積情報を事前入力します。</p><p>会社台帳専用のGoogle Driveフォルダを指定してください。現在の台帳から「Grant Forms Cloud - 会社台帳」を作成し、以後は管理画面で会社情報を保存するたびに更新します。申請書類の保存先とは別に指定できます。</p>
 <form id="ledger-storage-settings"><label for="ledger-storage-folder">会社台帳の保存先フォルダURL</label><input id="ledger-storage-folder" type="url" placeholder="https://drive.google.com/drive/folders/..." required><button type="submit">会社台帳の保存先を設定</button></form>
 <p id="ledger-storage-status" role="status"></p><p><a id="ledger-storage-open" target="_blank" rel="noopener noreferrer" hidden>保存先フォルダを開く</a>　<a id="ledger-sheet-open" target="_blank" rel="noopener noreferrer" hidden>会社台帳スプレッドシートを開く</a></p>
 <p>会社情報の編集は下の管理画面から行ってください。スプレッドシートを直接編集した内容は、管理画面へは取り込みません。</p>
@@ -19,6 +19,7 @@
 <label for="profile-representativeKana">代表者のふりがな</label><input id="profile-representativeKana" data-profile="representativeKana" maxlength="120">
 <label for="profile-person">担当者名</label><input id="profile-person" data-profile="person" maxlength="80">
 <label for="profile-phone">電話番号</label><input id="profile-phone" data-profile="phone" maxlength="40">
+<label for="profile-email">メールアドレス</label><input id="profile-email" data-profile="email" type="email" maxlength="180">
 <div id="number-rows"></div>
 <button id="add-number" type="button">項目を追加</button>
 <button type="submit">会社情報を保存</button>
@@ -252,6 +253,7 @@ function refresh() {
         link.textContent = '提出済み・書類を開く';
         cell.append(link);
       } else cell.textContent = Date.now() > item.expiresAt ? '期限切れ' : '未提出';
+      if(item.receipt){const ledger=document.createElement('p');ledger.textContent=item.ledgerSyncPending?'会社台帳への反映が保留されています。':item.companyId?'会社台帳へ反映済み':'';cell.append(ledger);if(item.ledgerSyncPending||!item.companyId){const retry=document.createElement('button');retry.type='button';retry.textContent='会社台帳へ反映';retry.onclick=()=>{retry.disabled=true;google.script.run.withSuccessHandler(()=>{ledger.textContent='会社台帳へ反映しました。会社台帳一覧を再読み込みしてください。';retry.hidden=true;}).withFailureHandler(e=>{ledger.textContent=e.message;retry.disabled=false;}).retrySubmittedCompanyLedger(item.historyId);};cell.append(retry);}}
       const assessment = row.insertCell();
       if (item.genderCounts) {
         for (const group of item.genderCounts.groups) {
