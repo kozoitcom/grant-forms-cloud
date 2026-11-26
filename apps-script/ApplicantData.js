@@ -74,6 +74,8 @@ function submitWomenR8(form) {
     recorded = true;
     SpreadsheetApp.flush();
     if (invitation) {
+      const ledgerRecord={receipt,company,grant:'women-r8',submittedAt:new Date().toISOString(),values:{...Object.fromEntries(fields.map(([key],index)=>[key,values[index]])),industry,entity,location:corporate?location:'',otherCity:corporate?'':otherCity,representativeKana:String(form.representativeKana||'').trim().slice(0,120)},employees,genderCounts};
+      accumulateSubmittedCompany_(invitation,ledgerRecord);
       invitation.genderCounts = genderCounts;
       invitation.receipt = receipt;
       invitation.folderUrl = folder.getUrl();
@@ -203,12 +205,8 @@ function sendGrantInvitation(token) {
 
 const COMPANY_NUMBER_PREFIX = 'COMPANY_NUMBERS_';
 
-function listCompanyNumbers() {
-  requireGrantAdmin_();
-  const data = PropertiesService.getScriptProperties().getProperties();
-  return Object.entries(data).filter(([key]) => key.startsWith(COMPANY_NUMBER_PREFIX))
-    .map(([, value]) => JSON.parse(value)).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-}
+function companyLedgerRecords_(){const data=PropertiesService.getScriptProperties().getProperties();return Object.entries(data).filter(([key])=>key.startsWith(COMPANY_NUMBER_PREFIX)).flatMap(([,value])=>{try{return [JSON.parse(value)];}catch(_){return [];}}).sort((a,b)=>a.name.localeCompare(b.name,'ja'));}
+function listCompanyNumbers(){requireGrantAdmin_();return companyLedgerRecords_();}
 
 function saveCompanyNumbers(input) {
   requireGrantAdmin_();
@@ -238,9 +236,10 @@ function saveCompanyNumbers(input) {
       throw new Error('同名の会社は登録済みです。会社一覧から選択してください。');
     }
     const recordId = id || Utilities.getUuid();
-    const profile = Object.fromEntries(Object.entries({"industry":["業種",120],"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40]})
+    const profile = Object.fromEntries(Object.entries({"industry":["業種",120],"address":["事業所所在地",250],"representative":["代表者の役職・氏名",120],"representativeKana":["代表者のふりがな",120],"person":["担当者名",80],"phone":["電話番号",40],"email":["メールアドレス",180]})
       .map(([key, [, max]]) => [key, String(input.profile?.[key] || '').trim().slice(0, max)]));
-    const json = JSON.stringify({id: recordId, name, entries, profile});
+    const old=records.find(record=>record.id===recordId);
+    const json = JSON.stringify({...(old||{}),id: recordId, name, entries, profile:{...(old?.profile||{}),...profile}});
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
     syncCompanyLedgerSheet_([...records.filter(record=>record.id!==recordId),JSON.parse(json)]);
     props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
@@ -407,4 +406,31 @@ function saveCompanyLedgerStorageSettings(input){
  syncCompanyLedgerSheet_(listCompanyNumbers(),sheetId);DriveApp.getFileById(sheetId).moveTo(folder);p.setProperty('COMPANY_LEDGER_FOLDER_ID',id);p.setProperty('COMPANY_LEDGER_SPREADSHEET_ID',sheetId);
  return getCompanyLedgerStorageSettings();
  }catch(error){if(created){try{created.setTrashed(true);}catch(_){}}throw new Error('会社台帳の保存先を設定できませんでした。フォルダの編集権限を確認してください。');}finally{lock.releaseLock();}
+}
+
+function companyLedgerDetails_(record){return record?.detailFileId?JSON.parse(DriveApp.getFileById(record.detailFileId).getBlob().getDataAsString('UTF-8')):{values:{},fields:[],employees:[]};}
+function ledgerLabelKey_(label,type){return JSON.stringify([String(label||'').normalize('NFKC').replace(/\s+/g,'').trim(),type||'text']);}
+/** Caller holds the submission lock and has already validated its invitation. */
+function upsertSubmittedCompany_(invite,submission){
+ const records=companyLedgerRecords_(),name=String(submission.company||invite.company||'').trim(),email=String(submission.values?.email||invite.email||'').trim();
+ let old=invite.companyId?records.find(r=>r.id===invite.companyId):null;
+ if(invite.companyId&&!old)throw Error('会社台帳の紐付け先が見つかりません。');
+ if(!old){const matches=records.filter(r=>r.name.normalize('NFKC')===name.normalize('NFKC')&&r.profile?.email&&r.profile.email.toLowerCase()===email.toLowerCase());if(matches.length===1)old=matches[0];}
+ const details=companyLedgerDetails_(old);if(details.lastReceipt===submission.receipt){invite.companyId=old.id;syncCompanyLedgerSheet_(records);return old.id;}
+ const id=old?.id||Utilities.getUuid(),profile={...(old?.profile||{})},values={...(details.values||{})},fields=new Map((details.fields||[]).map(f=>[ledgerLabelKey_(f.label,f.type),f]));
+ for(const [key,value] of Object.entries(submission.values||{})){if(value!==''&&value!==null&&value!==undefined)values[key]=String(value);}
+ const common={industry:120,address:250,representative:120,representativeKana:120,person:80,phone:40,email:180};
+ for(const [key,max]of Object.entries(common)){const value=String(submission.values?.[key]??'').trim();if(value)profile[key]=value.slice(0,max);}if(!profile.email&&email)profile.email=email;
+ for(const f of submission.definition?.fields||[]){if(!f.enabled||['file','file_word','file_excel'].includes(f.type)||!Object.prototype.hasOwnProperty.call(submission.values||{},f.id))continue;const value=String(submission.values[f.id]??'');if(value!==''||f.type==='checkbox')fields.set(ledgerLabelKey_(f.label,f.type),{id:f.id,label:f.label,type:f.type,value,sourceGrant:submission.grant,updatedAt:submission.submittedAt});}
+ let employees=details.employees||[];if(submission.employees?.length)employees=submission.employees;
+ const data={values,fields:[...fields.values()],employees,genderCounts:submission.genderCounts||details.genderCounts||null,lastReceipt:submission.receipt,updatedAt:submission.submittedAt};
+ let detailFileId=old?.detailFileId;if(detailFileId)DriveApp.getFileById(detailFileId).setContent(JSON.stringify(data));else{const destination=PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_FOLDER_ID');const folder=destination?DriveApp.getFolderById(destination):requirementStore_(true);detailFileId=folder.createFile('company-data-'+id+'.json',JSON.stringify(data),MimeType.PLAIN_TEXT).getId();}
+ const record={...(old||{}),id,name,profile,entries:old?.entries||[],detailFileId,lastSubmissionReceipt:submission.receipt,updatedAt:submission.submittedAt};
+ const json=JSON.stringify(record);if(Utilities.newBlob(json).getBytes().length>8500)throw Error('会社台帳の基本情報が長すぎます。');
+ PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+id,json);invite.companyId=id;syncCompanyLedgerSheet_([...records.filter(r=>r.id!==id),record]);return id;
+}
+function accumulateSubmittedCompany_(invite,submission){try{upsertSubmittedCompany_(invite,submission);invite.ledgerSyncPending=false;delete invite.ledgerSyncError;}catch(_){invite.ledgerSyncPending=true;invite.ledgerSyncError='会社台帳への反映を再実行してください。';}}
+function retrySubmittedCompanyLedger(historyId){
+ requireGrantAdmin_();if(!/^GRANT_INVITE_[A-Za-z0-9_-]{43}=?$/.test(String(historyId||'')))throw Error('申請履歴を選び直してください。');
+ const lock=LockService.getScriptLock();lock.waitLock(20000);try{const props=PropertiesService.getScriptProperties(),raw=props.getProperty(historyId);if(!raw)throw Error('申請履歴が見つかりません。');const invite=JSON.parse(raw);if(!invite.receipt)throw Error('提出済みの申請を選択してください。');const submission=collectionExport_(invite.receipt);upsertSubmittedCompany_(invite,submission);invite.ledgerSyncPending=false;delete invite.ledgerSyncError;props.setProperty(historyId,JSON.stringify(invite));return true;}finally{lock.releaseLock();}
 }
