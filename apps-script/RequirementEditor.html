@@ -1,4 +1,4 @@
-<section><h2>資料から必要項目を作成</h2>
+<section><details id="req-create-details"><summary style="cursor:pointer;font-size:1.4em;font-weight:700">資料から必要項目を作成</summary>
 <p>資料を選び、「API方式」または「基本項目方式」から項目を作成してください。</p>
 <div style="padding:18px;border:2px solid #136960;border-radius:10px;background:#f3f9f8">
 <label for="req-batch">① 一括登録した資料を選択</label><select id="req-batch"><option value="">資料を選択してください</option></select>
@@ -27,6 +27,7 @@
 </div>
 <p id="req-analysis" role="status"></p><p id="req-ai-warnings" role="status" style="white-space:pre-wrap"></p><p>作成後に項目が下へ表示されます。内容を確認し、不要な項目は項目名の横の「必要」のチェックを外してください。この操作だけでは申請者へ公開されません。</p>
 </div>
+</details>
 <h3 style="margin-top:24px">作成した項目の確認・編集</h3><button id="req-save-top" type="button">項目を保存</button><p id="req-save-state" role="status">保存すると、画面を閉じても項目が残ります。次回は保存済みの項目から選んで読み込めます。</p>
 <p>新しく作る場合は、上で資料と作成方式を選んでください。以前に保存した内容を編集する場合は、下の「保存済みの下書き」を選んで読み込みます。</p>
 <label>保存済みの項目<select id="req-def"><option value="">新しく作成</option></select></label><button type="button" id="req-load">保存した項目を読み込む</button>
