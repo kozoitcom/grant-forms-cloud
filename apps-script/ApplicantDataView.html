@@ -272,3 +272,13 @@ function refresh() {
 }
 refresh();
 </script>
+<section><h2>項目の別名（自動入力用）</h2><p>上の「登録済みの会社」を選択してから、別名を1行に1つずつ入力してください。例：会社名の別名に「企業名」「法人名」を別々の行で入力します。保存後に新しく発行する会社別リンクへ反映されます。</p>
+<form id="field-alias-form"><div id="field-alias-rows"></div><button id="save-field-aliases" type="submit" disabled>別名を保存</button><p id="field-alias-status" role="status"></p></form></section>
+<script>
+(()=>{const selector=document.getElementById('company-records'),rows=document.getElementById('field-alias-rows'),status=document.getElementById('field-alias-status'),button=document.getElementById('save-field-aliases');let selected='',request=0;
+function refresh(){const id=selector.value,seq=++request;selected='';rows.replaceChildren();button.disabled=true;if(!id){status.textContent='会社を登録・選択してください。';return;}status.textContent='項目を読み込み中…';
+google.script.run.withSuccessHandler(fields=>{if(seq!==request||selector.value!==id)return;selected=id;for(const field of fields){const label=document.createElement('label'),input=document.createElement('textarea');label.textContent=field.label+' の別名（1行に1つ）';input.rows=3;input.dataset.aliasKey=field.key;input.value=field.aliases.join('\n');input.placeholder='企業名\n法人名';label.append(input);rows.append(label);}button.disabled=false;status.textContent='';}).withFailureHandler(e=>{if(seq===request)status.textContent=e.message;}).getCompanyFieldAliases(id);}
+selector.addEventListener('change',refresh);refresh();
+document.getElementById('field-alias-form').addEventListener('submit',e=>{e.preventDefault();if(!selected||selected!==selector.value)return;const companyId=selected;button.disabled=true;status.textContent='保存中…';google.script.run.withSuccessHandler(()=>{button.disabled=false;status.textContent='別名を保存しました。次に発行する会社別リンクから自動入力に使われます。';}).withFailureHandler(e=>{button.disabled=false;status.textContent=e.message;}).saveCompanyFieldAliases({companyId,fields:[...rows.querySelectorAll('textarea')].map(el=>({key:el.dataset.aliasKey,aliases:el.value}))});});
+})();
+</script>
