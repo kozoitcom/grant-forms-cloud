@@ -39,6 +39,11 @@
 <label>特定会社のリンク<select id="req-company"><option value="">会社リンクを選択</option></select></label>
 <label><input type="checkbox" id="req-reviewed" style="width:auto"> 全資料の必要項目・選択肢・表示条件・転記先を確認しました</label>
 <button id="req-publish" type="button">確認した内容を公開</button><p id="req-status" role="status"></p>
+<h3>申請者データ・提出書類の保存先</h3>
+<p>保存先のGoogle DriveフォルダURLを登録してください。今後の送信時に、このフォルダ内へ会社名・助成金名・受付IDごとのフォルダを作り、入力データと添付書類を保存します。全助成金共通の設定で、②の保存先設定とも連動します。</p>
+<label for="req-storage-folder">Google Drive保存先フォルダURL<input id="req-storage-folder" type="url" placeholder="https://drive.google.com/drive/folders/..."></label>
+<button id="req-storage-save" type="button">保存先を確認して保存</button>
+<p id="req-storage-status" role="status"></p><p><a id="req-storage-open" target="_blank" rel="noopener noreferrer" hidden>保存先フォルダを開く</a></p>
 <h3>申請者へ送る会社別リンク</h3>
 <p>上で公開した助成金の会社専用リンクを、この画面で発行できます。会社台帳を選ぶと登録済み情報を事前入力します。</p>
 <label for="req-link-company-id">会社台帳<select id="req-link-company-id"><option value="">新規会社</option></select></label>
@@ -169,6 +174,11 @@ rpc('listCompanyNumbers').then(items=>{inlineCompanies=items;for(const item of i
 $('req-link-issue').onclick=()=>run(async()=>{clearInlineInvitation();if(!draft.id||dirty)throw Error('先に項目を保存して公開してください。');const input=inlineInput();if(!input.company||!input.email||!$('req-link-email').checkValidity()){$('req-link-status').textContent='会社名とメールアドレスを入力してください。';return;}$('req-link-status').textContent='会社別リンクを発行中…';try{const result=await rpc('createGrantInvitation',input);inlineInvitation={...result,definitionId:draft.id};$('req-link-url').value=result.url;$('req-link-open').href=result.url;$('req-link-subject').value=result.subject;$('req-link-body').value=result.body;$('req-link-result').hidden=false;$('req-link-send').disabled=false;$('req-link-status').textContent='リンクを発行しました。コピーして申請者へ送るか、案内メールを送信できます。';await refresh();}catch(e){$('req-link-status').textContent=e.message;throw e;}});
 $('req-link-copy').onclick=async()=>{if(!inlineInvitation)return;try{await navigator.clipboard.writeText(inlineInvitation.url);$('req-link-status').textContent='リンクをコピーしました。';}catch(_){$('req-link-url').focus();$('req-link-url').select();$('req-link-status').textContent='リンクを選択しました。Ctrl+Cでコピーしてください。';}};
 $('req-link-send').onclick=()=>run(async()=>{if(!inlineInvitation||inlineInvitation.definitionId!==draft.id)throw Error('リンクを発行し直してください。');$('req-link-status').textContent='案内メールを送信中…';try{await rpc('sendGrantInvitation',inlineInvitation.token);inlineInvitation.sent=true;$('req-link-status').textContent='案内メールを送信しました。';}catch(e){$('req-link-status').textContent=e.message;throw e;}});
+
+
+function showInlineStorage(settings){$('req-storage-folder').value=settings.url||'';$('req-storage-open').hidden=!settings.url;if(settings.url)$('req-storage-open').href=settings.url;$('req-storage-status').textContent='現在の保存先：'+settings.name;}
+rpc('getSubmissionStorageSettings').then(showInlineStorage).catch(e=>{$('req-storage-status').textContent=e.message;});
+$('req-storage-save').onclick=()=>run(async()=>{const url=$('req-storage-folder').value.trim();if(!url){$('req-storage-status').textContent='Google Driveの保存先フォルダURLを入力してください。';return;}$('req-storage-status').textContent='書き込み権限を確認して保存中…';try{const settings=await rpc('saveSubmissionStorageSettings',url);showInlineStorage(settings);$('req-storage-status').textContent='保存先を設定しました：'+settings.name+'。今後の提出から適用されます。';}catch(e){$('req-storage-status').textContent=e.message;throw e;}});
 
 refresh().catch(e=>status(e.message));
 })();
