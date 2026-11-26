@@ -120,16 +120,17 @@ function submitRequirementApplication(form){
   const snapshot=resolveRequirementSnapshot_(invite);if(Number(form.revision)!==snapshot.revision)throw new Error('項目が更新されています。画面を再読み込みしてください。');
   let raw;try{raw=JSON.parse(form.answersJson);}catch(_){throw new Error('入力内容を確認してください。');}
   const answers=requirementAnswers_(snapshot.fields,raw),uploads=[];
-  if(answers.company && answers.company!==invite.company || answers.email && answers.email.toLowerCase()!==invite.email.toLowerCase())throw new Error('案内先の会社名・メールアドレスと一致しません。');
+  if(answers.email && answers.email.toLowerCase()!==invite.email.toLowerCase())throw new Error('案内先のメールアドレスと一致しません。');
+  const submittedCompany=String(answers.company||invite.company).trim();if(!submittedCompany||submittedCompany.length>120||/[\r\n]/.test(submittedCompany))throw new Error('会社名・屋号を120文字以内で入力してください。');
   let total=0;
   for(const f of snapshot.fields){if(!f.enabled||!['file','file_word','file_excel'].includes(f.type)||(f.condition&&String(raw[f.condition.field]??'')!==f.condition.equals))continue;const blob=form['upload_'+f.id];if(!blob||!blob.getName?.()){if(f.required)throw new Error(f.label+'を添付してください。');continue;}const bytes=blob.getBytes();total+=bytes.length;if(total>20*1024*1024)throw new Error('添付は合計20 MB以内にしてください。');const ext=requirementUploadExtension_(f,blob,bytes);uploads.push({f,blob,ext});}
   const lock=LockService.getScriptLock();lock.waitLock(20000);let folder;
   try{const latest=readGrantInvitation_(String(form.inviteToken));if(latest.receipt)return {receipt:latest.receipt};if(resolveRequirementSnapshot_(latest).revision!==snapshot.revision)throw new Error('項目が更新されました。再読み込みしてください。');
     const receipt=Utilities.getUuid(),submittedAt=new Date().toISOString(),p=PropertiesService.getScriptProperties(),dest=p.getProperty('GRANT_SUBMISSION_FOLDER_ID');
-    folder=(dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(invite.company+' - '+snapshot.title+' - '+receipt);
+    folder=(dest?DriveApp.getFolderById(dest):requirementStore_(true)).createFolder(submittedCompany+' - '+snapshot.title+' - '+receipt);
     uploads.forEach(({f,blob,ext})=>folder.createFile(blob.setName(f.label.replace(/[\\/]/g,'_')+'.'+ext)));
     const historicalAnswers=latest.answerDraftId?JSON.parse(DriveApp.getFileById(latest.answerDraftId).getBlob().getDataAsString('UTF-8')).answers:{};
-    const record={historicalAnswers,schemaVersion:2,receipt,grant:invite.grant,company:invite.company,submittedAt,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderUrl:folder.getUrl()};
+    const record={historicalAnswers,schemaVersion:2,receipt,grant:invite.grant,company:submittedCompany,invitedCompany:invite.company,submittedAt,values:answers,entity:'',employees:[],genderCounts:null,definition:snapshot,folderUrl:folder.getUrl()};
     const file=folder.createFile('入力内容.json',JSON.stringify(record),MimeType.PLAIN_TEXT);
     latest.receipt=receipt;latest.folderUrl=folder.getUrl();writeGrantInvitation_(String(form.inviteToken),latest);
     p.setProperty('REQUIREMENT_RESPONSE_'+receipt,file.getId());return {receipt};
