@@ -63,3 +63,20 @@ test('inline company link issuance uses current schema and clears link after rec
  nodes.get('req-link-company-name').value='Test Company';nodes.get('req-link-email').value='test@example.test';nodes.get('req-link-email').checkValidity=()=>true;
  await nodes.get('req-link-issue').onclick();assert.equal(nodes.get('req-link-url').value,'https://example.test/form');assert.equal(nodes.get('req-link-result').hidden,false);nodes.get('req-link-email').oninput();assert.equal(nodes.get('req-link-result').hidden,true);assert.equal(nodes.get('req-link-url').value,'');
 });
+
+test('publication saves unsaved requirements first and requires review',async()=>{
+ const nodes=new Map();
+ const el=tag=>({tagName:tag.toUpperCase(),value:'',checked:false,style:{},children:[],setAttribute(k,v){this[k]=v},append(...x){this.children.push(...x)},replaceChildren(...x){this.children=x},add(x){this.children.push(x)}});
+ const document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,el('input'));return nodes.get(id)},createElement:el,querySelectorAll:()=>[]};
+ let saved=null;const calls=[];
+ const handlers={getRequirementForm:()=>structuredClone(saved),publishRequirementForm:input=>{assert.equal(input.id,saved.id);assert.equal(input.revision,saved.revision);assert.equal(saved.fields[0].label,'公開する項目');return {revision:saved.revision};},listRequirementForms:()=>saved?[saved]:[],listGrantMaterialBatches:()=>[],listGrantInvitations:()=>[],getRequirementAiStatus:()=>({configured:false}),saveRequirementForm:input=>{calls.push(structuredClone(input));saved={...structuredClone(input),id:'11111111-1111-1111-1111-111111111111',revision:input.revision+1};return structuredClone(saved)}};
+ const run=()=>{let ok,fail;return new Proxy({withSuccessHandler(fn){ok=fn;return this},withFailureHandler(fn){fail=fn;return this}},{get(target,name){if(name in target)return target[name];return (...args)=>Promise.resolve().then(()=>handlers[name](...args)).then(ok,fail)}})};
+ const scriptRun={};Object.defineProperty(scriptRun,'run',{get:run});
+ const ctx={document,google:{script:scriptRun},Option:function(text,value){this.text=text;this.value=value},crypto,structuredClone,Date,console,confirm:()=>true};vm.createContext(ctx);
+ const html=fs.readFileSync(path.join(__dirname,'../apps-script/RequirementEditor.html'),'utf8');vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx);await new Promise(setImmediate);
+
+ nodes.get('req-title').value='test';nodes.get('req-year').value='R8';nodes.get('req-add').onclick();
+ await nodes.get('req-publish').onclick();assert.equal(calls.length,0);assert(nodes.get('req-status').textContent.includes('照合確認'));
+ const box=nodes.get('req-fields').children[0].children[1].children[1];const label=box.children.find(l=>l.children[0]==='項目名').children[1];label.value='公開する項目';label.oninput();nodes.get('req-reviewed').checked=true;
+ await nodes.get('req-publish').onclick();assert.equal(calls.length,1);assert(nodes.get('req-status').textContent.includes('公開しました'));
+});
