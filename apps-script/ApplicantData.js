@@ -43,8 +43,8 @@ function submitWomenR8(form) {
   try {
     const invitation = token ? readGrantInvitation_(token) : null;
     if (invitation && invitation.receipt) return {receipt: invitation.receipt};
-    if (invitation && (company !== invitation.company || email.toLowerCase() !== invitation.email.toLowerCase())) {
-      throw new Error('案内メールの会社名と宛先メールアドレスを確認してください。');
+    if (invitation && (email.toLowerCase() !== invitation.email.toLowerCase())) {
+      throw new Error('案内メールの宛先メールアドレスを確認してください。');
     }
     const {root, sheet} = getWomenR8Storage_();
     const receipt = Utilities.getUuid();
