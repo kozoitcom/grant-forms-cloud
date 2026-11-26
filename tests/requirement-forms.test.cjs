@@ -69,3 +69,5 @@ test('Excel submission accepts spreadsheets and rejects renamed Word documents',
  assert.throws(()=>ctx.requirementUploadExtension_(f,blob('renamed.xlsx'),[80,75,3,4]));
  assert.throws(()=>ctx.requirementUploadExtension_(f,blob('test.doc'),[208,207,17,224,161,177,26,225]));
 });
+
+test('removed fields retain identity but cannot be enabled or staged',()=>{const {ctx}=harness();const f=ctx.requirementFields_([field({removed:true,enabled:true,stages:['application']})])[0];assert.equal(f.removed,true);assert.equal(f.enabled,false);assert.equal(f.stages.length,0);});
