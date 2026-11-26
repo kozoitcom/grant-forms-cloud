@@ -78,7 +78,8 @@ function readApplicantInvitationPrefill_(invitation) {
 
 /** The inline preview and actual applicant URL share one rendering implementation. */
 function buildApplicantPage_(invitation, prefill, inviteToken, previewMode) {
-  if(invitation?.legacyAnswerDraftId){const saved=JSON.parse(DriveApp.getFileById(invitation.legacyAnswerDraftId).getBlob().getDataAsString('UTF-8'));prefill={...prefill,...saved.values,company:saved.values.company||invitation.company,email:invitation.email};}
+  let submittedValues=null;if(invitation?.receipt){const folder=existingSubmissionFolder_(invitation.folderId,invitation.folderUrl),files=folder.getFilesByName('入力内容.json');if(files.hasNext()){submittedValues=JSON.parse(files.next().getBlob().getDataAsString('UTF-8'));prefill={...prefill,...submittedValues};}}
+  if(invitation?.legacyAnswerDraftId){const saved=JSON.parse(DriveApp.getFileById(invitation.legacyAnswerDraftId).getBlob().getDataAsString('UTF-8'));if(!submittedValues||String(saved.updatedAt||'')>String(submittedValues.updatedAt||submittedValues.submittedAt||''))prefill={...prefill,...saved.values};prefill.email=invitation.email;}
   const page = HtmlService.createTemplateFromFile('WomenR8');
   page.documents = WOMEN_R8_DOCUMENTS;
   page.documentSettings = getDocumentSettings_();
@@ -86,7 +87,7 @@ function buildApplicantPage_(invitation, prefill, inviteToken, previewMode) {
   page.prefill = prefill;
   page.inviteToken = inviteToken;
   page.previewMode = previewMode;
-  page.initialFormJson = JSON.stringify({values:prefill,preview:previewMode}).replace(/</g, '\\u003c');
+  page.initialFormJson = JSON.stringify({values:prefill,preview:previewMode,submitted:!!invitation?.receipt,submissionVersion:invitation?.submissionVersion||(invitation?.receipt?1:0),savedFiles:invitation?.savedFiles||(invitation?.receipt?WOMEN_R8_DOCUMENTS.map(d=>d[0]):[])}).replace(/</g, '\\u003c');
   return page.evaluate().setTitle('令和8年度 女性活躍情報公開促進奨励金 | 書類受付')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -94,12 +95,12 @@ function buildApplicantPage_(invitation, prefill, inviteToken, previewMode) {
 /** Partial applicant answers are private and only accessible with the validated invitation. */
 function saveWomenR8AnswerDraft(input){
  const token=String(input?.token||''),invite=readGrantInvitation_(token);
- if(invite.grant!=='women-r8'||invite.receipt)throw new Error('このリンクは編集できません。');
+ if(invite.grant!=='women-r8')throw new Error('このリンクは編集できません。');
  const raw=input.values||{},values={};
  const limits={company:120,industry:120,address:250,representative:120,representativeKana:120,person:80,phone:40,note:1000,entity:20,location:10,otherCity:10,workersMale:10,workersFemale:10,chiefsMale:10,chiefsFemale:10,managersMale:10,managersFemale:10,officersMale:10,officersFemale:10};
  for(const [key,max] of Object.entries(limits)){const v=String(raw[key]??'');if(v.length>max)throw new Error('入力内容が長すぎます。');values[key]=v;}
  if(!Array.isArray(raw.employees)||raw.employees.length>300)throw new Error('従業員数を確認してください。');
  values.employees=raw.employees.map(e=>{const out={};for(const key of ['name','position','employment']){out[key]=String(e[key]??'');if(out[key].length>120)throw new Error('従業員の入力内容が長すぎます。');}return out;});
  const lock=LockService.getScriptLock();lock.waitLock(20000);
- try{const latest=readGrantInvitation_(token);if(latest.receipt)throw new Error('提出済みです。');const json=JSON.stringify({values,updatedAt:new Date().toISOString()});if(latest.legacyAnswerDraftId)DriveApp.getFileById(latest.legacyAnswerDraftId).setContent(json);else{latest.legacyAnswerDraftId=requirementStore_(true).createFile('legacy-answers-'+Utilities.getUuid()+'.json',json,MimeType.PLAIN_TEXT).getId();writeGrantInvitation_(token,latest);}return true;}finally{lock.releaseLock();}
+ try{const latest=readGrantInvitation_(token);const json=JSON.stringify({values,updatedAt:new Date().toISOString()});if(latest.legacyAnswerDraftId)DriveApp.getFileById(latest.legacyAnswerDraftId).setContent(json);else{latest.legacyAnswerDraftId=requirementStore_(true).createFile('legacy-answers-'+Utilities.getUuid()+'.json',json,MimeType.PLAIN_TEXT).getId();writeGrantInvitation_(token,latest);}return true;}finally{lock.releaseLock();}
 }
