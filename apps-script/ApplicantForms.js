@@ -18,7 +18,8 @@ function applicantPrefill_(companyId, sourceReceipt, grant) {
  const details=companyLedgerDetails_(record);
  for(const key of ['entity','location','otherCity','workersMale','workersFemale','chiefsMale','chiefsFemale','managersMale','managersFemale','officersMale','officersFemale'])if(details.values?.[key]!==undefined)prefill[key]=details.values[key];
  if(details.employees?.length)prefill.employees=details.employees;
- if(String(grant||'').startsWith('schema:')){const definition=requirementRead_(grant.slice(7)),fields=definition.published?.fields||definition.fields||[];for(const f of fields){if(['file','file_word','file_excel'].includes(f.type)||!f.enabled)continue;const matches=(details.fields||[]).filter(old=>ledgerLabelKey_(old.label,old.type)===ledgerLabelKey_(f.label,f.type));if(matches.length===1)prefill[f.id]=matches[0].value;}}
+ if(String(grant||'').startsWith('schema:')){const definition=requirementRead_(grant.slice(7)),fields=definition.published?.fields||definition.fields||[];for(const f of fields){if(['file','file_word','file_excel'].includes(f.type)||!f.enabled)continue;const matches=(details.fields||[]).filter(old=>ledgerLabelKey_(old.label,old.type)===ledgerLabelKey_(f.label,f.type));if(matches.length===1)prefill[f.id]=matches[0].value;
+ else if(prefill[f.id]===undefined){const sources=companyAliasSources_(record).filter(s=>s.value!==undefined&&[s.label,...(record.fieldAliases?.[s.key]||[])].some(label=>ledgerLabelKey_(label,s.type)===ledgerLabelKey_(f.label,f.type)));if(sources.length===1)prefill[f.id]=sources[0].value;}}}
  }
   if (sourceReceipt) {
     const application = collectionExport_(sourceReceipt);
