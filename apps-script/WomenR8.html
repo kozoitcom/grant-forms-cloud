@@ -27,7 +27,7 @@ button{background:#136960;color:#fff;border:0;border-radius:8px;padding:12px 24p
 <section><h2>事業者・担当者情報</h2>
 <div class="grid">
 <div><label for="entity">事業者区分 <span class="req">必須</span></label><select id="entity" name="entity" required><option value="">選択してください</option><option value="company">法人</option><option value="sole">個人事業主</option></select></div>
-<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= prefill.company || (invitation ? invitation.company : '') ?>" <? if (invitation) { ?>readonly<? } ?> required></div>
+<div><label for="company">企業名・屋号 <span class="req">必須</span></label><input id="company" name="company" maxlength="120" value="<?= prefill.company || (invitation ? invitation.company : '') ?>" required></div>
 <div><label for="industry">業種 <span class="req">必須</span></label><input id="industry" name="industry" value="<?= prefill.industry || '' ?>" maxlength="120" placeholder="例：情報通信業、運輸業、小売業" required></div>
 <div class="wide"><label for="address">事業所所在地 <span class="req">必須</span></label><input id="address" name="address" value="<?= prefill.address || '' ?>" maxlength="250" required></div>
 <div><label for="representative">代表者の役職・氏名 <span class="req">必須</span></label><input id="representative" name="representative" value="<?= prefill.representative || '' ?>" maxlength="120" required></div>
