@@ -159,3 +159,23 @@ test('company ledger folder configuration exports existing records and returns f
  const result=context.saveCompanyLedgerStorageSettings('https://drive.google.com/drive/folders/test-folder-123');assert.equal(props.COMPANY_LEDGER_FOLDER_ID,'test-folder-123');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'ledger-sheet');assert.equal(sync,1);assert.equal(moved,1);assert(result.spreadsheetUrl.includes('ledger-sheet'));
  setUser('other@example.test');assert.throws(()=>context.getCompanyLedgerStorageSettings());assert.throws(()=>context.saveCompanyLedgerStorageSettings('bad'));
 });
+
+test('submitted company data accumulates across grants and prefills matching fields without erasing blanks',()=>{
+ const {context,props}=harness();delete props.COMPANY_NUMBERS_KEEP;const files=new Map();let fileCounter=0,syncs=0;
+ const folder={createFile(name,text){const id='details-'+(++fileCounter);const file={text,getId:()=>id,getBlob(){return {getDataAsString:()=>this.text};},setContent(text){this.text=text;}};files.set(id,file);return file;}};
+ context.requirementStore_=()=>folder;context.DriveApp.getFileById=id=>files.get(id);context.syncCompanyLedgerSheet_=()=>{syncs++;};
+ const invite={grant:'schema:test',company:'会社A',email:'a@example.test'};
+ const birth={id:'birth',label:'生年月日',type:'date',enabled:true},first={receipt:'r1',company:'会社A',grant:'schema:a',submittedAt:'2026-11-26T00:00:00Z',values:{company:'会社A',address:'住所A',email:'a@example.test',industry:'通信業',birth:'1990-01-02'},definition:{fields:[birth]},employees:[]};
+ const id=context.upsertSubmittedCompany_(invite,first);assert.equal(invite.companyId,id);assert.equal(context.companyLedgerRecords_().length,1);
+ context.upsertSubmittedCompany_(invite,{receipt:'r2',company:'会社A改',grant:'schema:b',submittedAt:'2026-11-27T00:00:00Z',values:{address:'',person:'担当者B',email:'a@example.test'},definition:{fields:[]},employees:[]});
+ let record=context.companyLedgerRecords_()[0];assert.equal(record.name,'会社A改');assert.equal(record.profile.address,'住所A');assert.equal(record.profile.person,'担当者B');assert.equal(context.companyLedgerDetails_(record).fields[0].value,'1990-01-02');
+ context.requirementRead_=()=>({published:{fields:[{id:'dateOfBirth',label:'生年月日',type:'date',enabled:true}]}});
+ const prefill=context.applicantPrefill_(id,'','schema:next');assert.equal(prefill.dateOfBirth,'1990-01-02');assert.equal(prefill.address,'住所A');assert.equal(prefill.company,'会社A改');
+ const prior=files.size;context.upsertSubmittedCompany_(invite,{...first,receipt:'r2'});assert.equal(files.size,prior);assert.equal(context.companyLedgerRecords_().length,1);
+ context.syncCompanyLedgerSheet_=()=>{throw Error('temporary sheet failure');};context.accumulateSubmittedCompany_(invite,{...first,receipt:'r3'});assert.equal(invite.ledgerSyncPending,true);context.syncCompanyLedgerSheet_=()=>{};context.accumulateSubmittedCompany_(invite,{...first,receipt:'r3'});assert.equal(invite.ledgerSyncPending,false);
+});
+test('company-name alone never overwrites an unrelated ledger record',()=>{
+ const {context,props}=harness();delete props.COMPANY_NUMBERS_KEEP;const files=new Map();let n=0;context.requirementStore_=()=>({createFile(name,text){const id='detail-'+(++n),file={getId:()=>id,getBlob:()=>({getDataAsString:()=>text}),setContent(value){text=value;}};files.set(id,file);return file;}});context.DriveApp.getFileById=id=>files.get(id);context.syncCompanyLedgerSheet_=()=>{};
+ for(const email of ['first@example.test','second@example.test'])context.upsertSubmittedCompany_({company:'同名会社',email},{company:'同名会社',receipt:email,values:{email},grant:'schema:test',submittedAt:'now'});
+ assert.equal(context.companyLedgerRecords_().length,2);
+});
