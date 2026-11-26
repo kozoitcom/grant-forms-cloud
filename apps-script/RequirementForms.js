@@ -78,14 +78,14 @@ function requirementPage_(params){
   let invite=null,snapshot,values={};
   if(params.invite){invite=readGrantInvitation_(params.invite);if(invite.grant!==params.grant)throw new Error('受付リンクが無効です。');snapshot=resolveRequirementSnapshot_(invite);values=requirementApplicantValues_(invite);}
   else{requireGrantAdmin_();snapshot=requirementRead_(params.grant.slice(7));values=applicantPrefill_(params.companyId,params.sourceReceipt,params.grant);}
-  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt,submissionVersion:invite?(submittedRequirementRecord_(invite)?.submissionVersion||0):0,savedFiles:invite?Object.keys(submittedRequirementRecord_(invite)?.documents||{}):[]}).replace(/</g,'\\u003c');
+  const p=HtmlService.createTemplateFromFile('RequirementApplicant');p.initial=JSON.stringify({snapshot:requirementDisplaySnapshot_(snapshot),values,token:invite?params.invite:'',preview:!invite,definitionId:invite?'':snapshot.id,submitted:!!invite?.receipt,submissionVersion:invite?(submittedRequirementRecord_(invite)?.submissionVersion||0):0,savedFiles:invite?requirementSavedFiles_(invite):[]}).replace(/</g,'\\u003c');
   return p.evaluate().setTitle(snapshot.title+' | 申請フォーム').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
 function requirementDisplaySnapshot_(snapshot){return {revision:snapshot.revision,title:snapshot.title,year:snapshot.year,fields:snapshot.fields.map(({source,target,...f})=>f)};}
 function getRequirementApplicantState(token){
   const invite=readGrantInvitation_(String(token||''));if(!invite.grant.startsWith('schema:'))throw new Error('受付リンクが無効です。');
   const values=requirementApplicantValues_(invite);
-  return {snapshot:requirementDisplaySnapshot_(resolveRequirementSnapshot_(invite)),values,token,preview:false,submitted:!!invite.receipt,submissionVersion:submittedRequirementRecord_(invite)?.submissionVersion||0,savedFiles:Object.keys(submittedRequirementRecord_(invite)?.documents||{})};
+  return {snapshot:requirementDisplaySnapshot_(resolveRequirementSnapshot_(invite)),values,token,preview:false,submitted:!!invite.receipt,submissionVersion:submittedRequirementRecord_(invite)?.submissionVersion||0,savedFiles:requirementSavedFiles_(invite)};
 }
 function requirementAnswers_(fields,raw){
   const out={},active=f=>f.enabled&&(!f.condition||String(raw[f.condition.field]??'')===f.condition.equals);
@@ -279,3 +279,6 @@ function replaceGrantSubmissionFiles_(folder,uploads){
   }return result;
  }catch(error){for(const old of retired){try{old.setTrashed(false);}catch(_){}}for(const {file}of created){try{file.setTrashed(true);}catch(_){}}throw error;}
 }
+
+
+function requirementSavedFiles_(invite){const record=submittedRequirementRecord_(invite);if(!record)return [];return Object.keys(existingSubmissionDocuments_(existingSubmissionFolder_(record.folderId,record.folderUrl),record.documents||{},record.definition?.fields||[]));}
