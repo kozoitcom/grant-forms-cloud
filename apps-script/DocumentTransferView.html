@@ -1,3 +1,49 @@
+<p>空欄のWord・Excelをまとめて登録し、会社台帳を基本情報のベースとして、今回の申請データと組み合わせます。記入済み見本は任意です。</p>
+<section><h2>AI転記・書類作成の準備</h2>
+<p><strong>現在は資料と転記元情報の登録・確認・保存まで利用できます。</strong> Word・Excelへの自動記入とPDF出力は未実装です。この操作ではGPTへ資料を送信しません。</p>
+<form id="workspace-form">
+<h3>① 対象会社・助成金を選択</h3>
+<label for="ws-company">対象の会社台帳（基本情報のベース）</label><select id="ws-company" required><option value="">会社台帳を選択してください</option></select>
+<p>登録済みの会社名・住所・代表者などを参照します。会社台帳や元ファイルは変更しません。</p>
+<label for="ws-grant">助成金名</label><input id="ws-grant" maxlength="160" required placeholder="女性活躍情報公開促進奨励金">
+<label for="ws-year">年度</label><input id="ws-year" maxlength="40" required placeholder="令和8年度">
+<h3>② 空欄のWord・Excelをまとめて添付</h3>
+<div id="ws-drop" tabindex="0" role="button" aria-label="資料を選択またはまとめてドロップ" style="border:2px dashed #136960;border-radius:10px;padding:24px;margin:12px 0;text-align:center">ここにファイルをまとめてドロップ<br>またはクリックして選択</div>
+<input id="ws-files" type="file" multiple accept=".docx,.doc,.xlsx,.xls,.pdf" hidden>
+<p>Word・Excelを混在して追加できます。空欄様式だけでも登録できます。募集要項・記入要領のPDFも追加可能です。1資料15 MB、合計50 MB、20件まで。</p>
+<ul id="ws-file-list"></ul><p id="ws-file-status" role="status"></p>
+<h3>③ 今回の申請データを指定（任意）</h3>
+<label for="ws-application">保存済みの申請データ</label><select id="ws-application"><option value="">会社台帳のみを使う</option></select>
+<label for="ws-notes">今回の申請情報・指示</label><textarea id="ws-notes" rows="5" maxlength="10000" placeholder="対象期間、申請金額、今回の取組・計画など。会社台帳にない情報や、優先して使う情報を入力してください。"></textarea>
+<p>会社台帳にない情報は推測で埋めず、書類への転記時に確認する情報として扱います。記入済み見本の会社情報・金額は転記元にしません。</p>
+<h3>④ 希望する出力形式</h3>
+<label for="ws-output">出力形式の指定（書類作成機能の実装後に使用）</label><select id="ws-output"><option value="original">元と同じWord・Excel</option><option value="original_pdf">元と同じWord・Excel ＋ PDF</option></select>
+<button id="ws-save" type="submit">資料と転記元情報を登録・確認</button><p id="ws-status" role="status"></p>
+</form>
+<div id="ws-preview" hidden><h3>登録した資料・転記元情報</h3><div id="ws-preview-content"></div></div>
+</section>
+<section><h2>保存した書類作成の準備</h2><p>登録時点の資料・会社情報・申請データを読み直せます。書類はまだ作成されていません。</p><p id="ws-history-status" role="status"></p><div id="ws-history"></div></section>
+<script>
+(()=>{
+const el=id=>document.getElementById(id),company=el('ws-company'),files=[],form=el('workspace-form');let applications=[],busy=false,pending=null;
+const call=(name,arg)=>new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](arg));
+function renderFiles(){const root=el('ws-file-list');root.replaceChildren();files.forEach((entry,i)=>{const row=document.createElement('li'),name=document.createElement('span'),select=document.createElement('select'),remove=document.createElement('button');name.textContent=entry.file.name+'（'+(entry.file.size/1024/1024).toFixed(1)+' MB） ';select.setAttribute('aria-label',entry.file.name+'の用途');for(const [value,label]of [['blank','空欄の申請様式'],['sample','記入済み見本（参考用）'],['guidelines','募集要項・記入要領']])select.add(new Option(label,value));select.value=entry.role;select.disabled=busy;select.onchange=()=>{entry.role=select.value;pending=null;};remove.type='button';remove.textContent='削除';remove.disabled=busy;remove.onclick=()=>{files.splice(i,1);pending=null;renderFiles();};row.append(name,select,remove);root.append(row);});}
+function addFiles(incoming){if(busy)return;const errors=[];for(const file of incoming){if(!/\.(docx?|xlsx?|pdf)$/i.test(file.name)){errors.push(file.name+'：Word・Excel・PDFで登録してください。');continue;}if(files.some(e=>e.file.name===file.name&&e.file.size===file.size&&e.file.lastModified===file.lastModified))continue;if(!file.size||file.size>15*1024*1024||files.length>=20||files.reduce((s,e)=>s+e.file.size,0)+file.size>50*1024*1024){errors.push(file.name+'：サイズ・件数の上限を超えています。');continue;}files.push({file,role:/\.pdf$/i.test(file.name)?'guidelines':'blank'});pending=null;}renderFiles();el('ws-file-status').textContent=errors.join('\n');}
+const drop=el('ws-drop');drop.onclick=()=>{if(!busy)el('ws-files').click();};drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();drop.click();}};drop.ondragover=e=>e.preventDefault();drop.ondrop=e=>{e.preventDefault();addFiles(e.dataTransfer.files);};el('ws-files').onchange=e=>{addFiles(e.target.files);e.target.value='';};
+function renderApplications(){const select=el('ws-application');select.replaceChildren(new Option('会社台帳のみを使う',''));const record=company.selectedOptions[0];for(const app of applications.filter(a=>a.company===record?.dataset.company))select.add(new Option(app.company+' ／ '+app.grant+' ／ '+app.submittedAt,app.receipt));}
+company.onchange=()=>{pending=null;renderApplications();};form.addEventListener('input',()=>{if(!busy)pending=null;});form.addEventListener('change',()=>{if(!busy)pending=null;});
+function setBusy(value){busy=value;for(const input of form.querySelectorAll('input,select,textarea,button'))input.disabled=value;drop.setAttribute('aria-disabled',String(value));renderFiles();}
+function showWorkspace(data){const root=el('ws-preview-content');root.replaceChildren();const add=(label,value)=>{const p=document.createElement('p'),b=document.createElement('strong');b.textContent=label+'：';p.append(b,document.createTextNode(String(value??'未登録')));root.append(p);};add('会社',data.company);add('助成金・年度',data.grantName+' ／ '+data.year);add('希望出力',data.output==='original_pdf'?'元の形式 ＋ PDF':'元と同じWord・Excel');for(const f of data.files){const p=document.createElement('p'),a=document.createElement('a');a.textContent=f.name+' ／ '+({blank:'空欄様式',sample:'記入済み見本（参考用）',guidelines:'募集要項・記入要領'}[f.role]);a.href=f.url;a.target='_blank';a.rel='noopener noreferrer';p.append(a);root.append(p);}add('今回の申請情報・指示',data.notes||'指定なし');
+const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='会社台帳と今回の申請データを確認';pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';pre.textContent=JSON.stringify({会社台帳:data.base,今回の申請:data.application},null,2);details.append(summary,pre);root.append(details);el('ws-preview').hidden=false;}
+async function history(){try{const items=await call('listTransferWorkspaces');el('ws-history').replaceChildren();el('ws-history-status').textContent=items.length?'':'保存済みの準備データはありません。';for(const item of items){const p=document.createElement('p'),button=document.createElement('button');p.textContent=item.company+' ／ '+item.grantName+' ／ '+item.year+' ';button.type='button';button.textContent='登録内容を確認';button.onclick=async()=>{if(busy)return;try{showWorkspace(await call('getTransferWorkspace',item.id));}catch(e){el('ws-status').textContent=e.message;}};p.append(button);el('ws-history').append(p);}}catch(e){el('ws-history-status').textContent=e.message;}}
+const read=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('ファイルを読み込めません：'+file.name));reader.readAsDataURL(file);});
+form.onsubmit=async e=>{e.preventDefault();if(busy)return;if(!files.length||!files.some(f=>f.role==='blank')){el('ws-status').textContent='空欄のWord・Excelを1件以上追加してください。';return;}
+const input={companyId:company.value,grantName:el('ws-grant').value,year:el('ws-year').value,receipt:el('ws-application').value,notes:el('ws-notes').value,output:el('ws-output').value,files:files.map(e=>({name:e.file.name,size:e.file.size,role:e.role}))},key=JSON.stringify(input);setBusy(true);el('ws-preview').hidden=true;
+try{if(!pending||pending.key!==key){el('ws-status').textContent='会社台帳と申請データを確認中…';pending={key,...await call('beginTransferWorkspace',input)};}for(let i=0;i<files.length;i++){el('ws-status').textContent=(i+1)+' / '+files.length+'件の資料を登録中…';await call('uploadTransferWorkspaceFile',{id:pending.id,index:i,base64:await read(files[i].file)});}const data=await call('completeTransferWorkspace',pending.id);showWorkspace(data);el('ws-status').textContent='資料と転記元情報を保存しました。Word・Excelへの自動記入はまだ行っていません。';await history();}catch(e){el('ws-status').textContent='登録を完了できませんでした：'+e.message+' 同じ内容でもう一度押すと、登録済みの資料を重複させず再開します。';}finally{setBusy(false);}};
+Promise.all([call('listCompanyNumbers'),call('listCollectedApplications')]).then(([companies,items])=>{for(const c of companies){const option=new Option(c.name,c.id);option.dataset.company=c.name;company.add(option);}applications=items;renderApplications();if(!companies.length)el('ws-status').textContent='②の会社台帳に会社情報を登録してください。';}).catch(e=>{el('ws-status').textContent=e.message;});history();
+})();
+</script>
+<details><summary>従来の申請データから転記準備を確認</summary>
 <p>②で保存した申請データを選び、①の様式・見本と組み合わせて転記用データを確定します。</p>
 <section><h2>AI転記・書類作成</h2>
 <p><strong>現在は転記用データの確認・保存まで利用できます。</strong> Word・Excel・PDFへの自動記入は未実装です。</p>
@@ -94,3 +140,5 @@ document.getElementById('transfer-refresh').onclick = refreshApplications;
 document.getElementById('transfer-grant').onchange = refreshApplications;
 refreshApplications(); refreshTransferHistory();
 </script>
+
+</details>
