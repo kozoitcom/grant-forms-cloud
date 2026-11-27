@@ -7,3 +7,8 @@ This directory mirrors the existing Google Apps Script project. Changes to `apps
 The Apps Script project currently contains only the default `myFunction` placeholder. This workflow does not migrate the existing FastAPI application.
 
 For Windows CMD, the local credential file is normally `%USERPROFILE%\.clasprc.json`. Keep it private. Rotate/revoke credentials if exposed.
+
+
+## Publishing completed changes
+
+Commit related source and test changes together. Only a final commit whose message includes `[deploy]`, or a manual `workflow_dispatch`, runs the Apps Script deployment job. Intermediate commits skip deployment so incomplete changes do not generate failure emails. Do not suppress real test or deployment failures. Use Git tree/commit/ref APIs for atomic multi-file updates when working through the GitHub connector.
