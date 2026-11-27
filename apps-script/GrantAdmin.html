@@ -3,13 +3,16 @@
 
 .system-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}.system-tabs a{flex:1;min-width:220px;padding:14px;border:1px solid #b5c9cc;border-radius:8px;background:white;color:#20343d;text-decoration:none;font-weight:650}.system-tabs a[aria-current="page"]{background:#136960;color:white;border-color:#136960}.system-status{color:#526973}button:focus-visible,a:focus-visible{outline:3px solid #c76b12;outline-offset:3px}
 </style></head><body><main>
-<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1>Grant Forms Cloud 管理画面</h1><span aria-label="バージョン">Ver. 2.4.0</span></div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap"><h1><?= standalone ? activeTitle : 'Grant Forms Cloud 管理画面' ?></h1><span aria-label="バージョン">Ver. 2.5.0</span></div>
+<? if (!standalone) { ?>
 <nav class="system-tabs" aria-label="管理システム">
 <? systems.forEach(function(item) { ?>
 <a href="<?= adminBaseUrl ?>&amp;system=<?= item.id ?>" <? if (item.id === activeSystem) { ?>aria-current="page"<? } ?>><?= item.title ?></a>
 <? }); ?>
 </nav>
-<p class="system-status">各タブは専用画面です。保存してから切り替えてください。</p>
+<section><h2>各システムを単独で開く</h2><p>専用リンクをブックマークすると、他のタブを表示せず直接操作できます。</p><? systems.forEach(function(item) { ?><p><a href="<?= adminBaseUrl ?>&amp;system=<?= item.id ?>&amp;standalone=1" target="_blank" rel="noopener noreferrer"><?= item.title ?>を単独で開く</a></p><? }); ?></section>
+<? } else { ?><p><a href="<?= adminBaseUrl ?>">システム選択へ戻る</a></p><? } ?>
+<p class="system-status">現在のシステムの画面だけを読み込みます。他のシステムのデータは必要なときに参照します。</p>
 <?!= HtmlService.createHtmlOutputFromFile(systemFile).getContent() ?>
 <? if (activeSystem === 'setup') { ?><?!= HtmlService.createHtmlOutputFromFile('RequirementEditor').getContent() ?><? } ?>
 </main></body></html>

@@ -232,3 +232,9 @@ test('each company receives one stable spreadsheet and never writes another comp
  context.syncCompanyLedgerSheet_([{...companies[0],name:'変更名'}]);assert.equal(creates,2);assert.equal(writes[2][0],props.COMPANY_LEDGER_SHEET_a);assert.equal(writes[2][1],'a');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'legacy');
  fail=true;assert.throws(()=>context.syncCompanyLedgerSheet_([{id:'c',name:'会社C'}]),/temporary/);const stable=props.COMPANY_LEDGER_SHEET_c;fail=false;context.syncCompanyLedgerSheet_([{id:'c',name:'会社C'}]);assert.equal(creates,3);assert.equal(props.COMPANY_LEDGER_SHEET_c,stable);
 });
+
+test('standalone entry points load only their own view and preserve the existing admin route',()=>{
+ const {context}=harness();for(const [system,view]of [['setup','GrantSetupView'],['applications','ApplicantDataView'],['transfer','DocumentTransferView']]){const page=context.doGet({parameter:{page:'admin',system,standalone:'1'}}).template;assert.equal(page.standalone,true);assert.equal(page.activeSystem,system);assert.equal(page.systemFile,view);assert(page.activeTitle);}
+ assert.equal(context.doGet({parameter:{page:'admin'}}).template.standalone,false);
+ const html=read('DocumentTransferView.html');assert(!html.includes("Promise.all([call('listCompanyNumbers'),call('listCollectedApplications')])"));for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(m[1]));
+});

@@ -18,6 +18,8 @@ function doGet(event) {
     const page = HtmlService.createTemplateFromFile('GrantAdmin');
     page.systems = systems;
     page.activeSystem = selected.id;
+    page.activeTitle = selected.title;
+    page.standalone = params.standalone === '1';
     page.systemFile = selected.file;
     page.adminBaseUrl = ScriptApp.getService().getUrl().replace(/\/dev$/, '/exec') + '?page=admin';
     return page.evaluate()
