@@ -210,7 +210,7 @@ function sendGrantInvitation(token) {
 const COMPANY_NUMBER_PREFIX = 'COMPANY_NUMBERS_';
 
 function companyLedgerRecords_(){const data=PropertiesService.getScriptProperties().getProperties();return Object.entries(data).filter(([key])=>key.startsWith(COMPANY_NUMBER_PREFIX)).flatMap(([,value])=>{try{return [JSON.parse(value)];}catch(_){return [];}}).sort((a,b)=>a.name.localeCompare(b.name,'ja'));}
-function listCompanyNumbers(){requireGrantAdmin_();return companyLedgerRecords_();}
+function listCompanyNumbers(){requireGrantAdmin_();const p=PropertiesService.getScriptProperties();return companyLedgerRecords_().map(r=>{const id=p.getProperty('COMPANY_LEDGER_SHEET_'+r.id);return {...r,ledgerSpreadsheetUrl:id?'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(id)+'/edit':''};});}
 
 function saveCompanyNumbers(input) {
   requireGrantAdmin_();
@@ -245,7 +245,7 @@ function saveCompanyNumbers(input) {
     const old=records.find(record=>record.id===recordId);
     const json = JSON.stringify({...(old||{}),id: recordId, name, entries, profile:{...(old?.profile||{}),...profile}});
     if (Utilities.newBlob(json).getBytes().length > 8500) throw new Error('入力内容が長すぎます。');
-    syncCompanyLedgerSheet_([...records.filter(record=>record.id!==recordId),JSON.parse(json)]);
+    syncCompanyLedgerSheet_([JSON.parse(json)]);
     props.setProperty(COMPANY_NUMBER_PREFIX + recordId, json);
     return recordId;
   } finally {
@@ -385,32 +385,45 @@ function companyLedgerRows_(records){
  const safe=value=>{const s=String(value??'');return /^[=+@-]/.test(s)?"'"+s:s;};
  return [headers,...records.map((r,i)=>{const p=r.profile||{},entries=new Map(r.entries||[]),d=details[i],answers=new Map((d.fields||[]).map(f=>[ledgerLabelKey_(f.label,f.type),f.value]));return [r.id,r.name,p.industry,p.address,p.representative,p.representativeKana,p.person,p.phone,...extra.map(x=>entries.get(x)||''),p.email,d.employees?.length?JSON.stringify(d.employees):'',d.updatedAt||'',...keys.map(k=>answers.get(k)||'')].map(safe);})];
 }
-function syncCompanyLedgerSheet_(records,spreadsheetId){
- const id=spreadsheetId||PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_SPREADSHEET_ID');if(!id)return;
- const book=SpreadsheetApp.openById(id),sheet=book.getSheetByName('会社台帳')||book.insertSheet('会社台帳'),rows=companyLedgerRows_(records);
+function writeCompanyLedgerRows_(book,record){
+ const sheet=book.getSheetByName('会社台帳')||book.getSheets()[0]||book.insertSheet('会社台帳'),rows=companyLedgerRows_([record]);
+ if(sheet.getName()!=='会社台帳')sheet.setName('会社台帳');
  if(sheet.getMaxColumns()<rows[0].length)sheet.insertColumnsAfter(sheet.getMaxColumns(),rows[0].length-sheet.getMaxColumns());
  if(sheet.getMaxRows()<rows.length)sheet.insertRowsAfter(sheet.getMaxRows(),rows.length-sheet.getMaxRows());
  const previousRows=sheet.getLastRow(),previousColumns=sheet.getLastColumn();
  sheet.getRange(1,1,rows.length,rows[0].length).setNumberFormat('@').setValues(rows);
  if(previousRows>rows.length)sheet.getRange(rows.length+1,1,previousRows-rows.length,Math.max(previousColumns,rows[0].length)).clearContent();
- if(previousColumns>rows[0].length)sheet.getRange(1,rows[0].length+1,rows.length,previousColumns-rows[0].length).clearContent();
- sheet.setFrozenRows(1);SpreadsheetApp.flush();
+ if(previousColumns>rows[0].length)sheet.getRange(1,rows[0].length+1,Math.max(rows.length,previousRows),previousColumns-rows[0].length).clearContent();
+ sheet.setFrozenRows(1);
+}
+function syncCompanyLedgerSheet_(records,folderId){
+ const p=PropertiesService.getScriptProperties(),destination=folderId||p.getProperty('COMPANY_LEDGER_FOLDER_ID');if(!destination)return;
+ const folder=DriveApp.getFolderById(destination);if(folder.isTrashed())throw Error('会社台帳の保存先が削除されています。');
+ for(const record of records){
+ const key='COMPANY_LEDGER_SHEET_'+record.id;let id=p.getProperty(key),book;
+ if(id){const file=DriveApp.getFileById(id);if(file.isTrashed())throw Error(record.name+'の会社台帳がゴミ箱にあります。復元してから再実行してください。');book=SpreadsheetApp.openById(id);}
+ else{book=SpreadsheetApp.create('Grant Forms Cloud - 会社台帳 - '+record.name);id=book.getId();p.setProperty(key,id);}
+ // Store the stable association before writing, so a failed retry reuses the same spreadsheet.
+ DriveApp.getFileById(id).moveTo(folder);writeCompanyLedgerRows_(book,record);
+ }
+ SpreadsheetApp.flush();
 }
 function getCompanyLedgerStorageSettings(){
- requireGrantAdmin_();const p=PropertiesService.getScriptProperties(),folderId=p.getProperty('COMPANY_LEDGER_FOLDER_ID'),sheetId=p.getProperty('COMPANY_LEDGER_SPREADSHEET_ID');
- if(!folderId)return {url:'',name:'未設定',spreadsheetUrl:''};
- const folder=DriveApp.getFolderById(folderId);return {url:folder.getUrl(),name:folder.getName(),spreadsheetUrl:sheetId?SpreadsheetApp.openById(sheetId).getUrl():''};
+ requireGrantAdmin_();const p=PropertiesService.getScriptProperties(),folderId=p.getProperty('COMPANY_LEDGER_FOLDER_ID');
+ if(!folderId)return {url:'',name:'未設定',spreadsheetUrl:'',perCompany:true};
+ const folder=DriveApp.getFolderById(folderId);return {url:folder.getUrl(),name:folder.getName(),spreadsheetUrl:'',perCompany:true};
 }
 function saveCompanyLedgerStorageSettings(input){
  requireGrantAdmin_();const value=String(input||'').trim(),match=value.match(/^https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([A-Za-z0-9_-]+)(?:[?/#].*)?$/),id=match?match[1]:(/^[A-Za-z0-9_-]{10,}$/.test(value)?value:'');
  if(!id)throw new Error('会社台帳の保存先フォルダURLを入力してください。');
  const folder=DriveApp.getFolderById(id);if(folder.isTrashed())throw new Error('削除済みのフォルダは指定できません。');
  const probe=folder.createFile('会社台帳 - 保存先確認.txt','書き込み確認',MimeType.PLAIN_TEXT);probe.setTrashed(true);
- const lock=LockService.getScriptLock();lock.waitLock(20000);let created;
- try{const p=PropertiesService.getScriptProperties();let sheetId=p.getProperty('COMPANY_LEDGER_SPREADSHEET_ID');if(!sheetId){const book=SpreadsheetApp.create('Grant Forms Cloud - 会社台帳');sheetId=book.getId();created=DriveApp.getFileById(sheetId);}
- syncCompanyLedgerSheet_(listCompanyNumbers(),sheetId);DriveApp.getFileById(sheetId).moveTo(folder);p.setProperty('COMPANY_LEDGER_FOLDER_ID',id);p.setProperty('COMPANY_LEDGER_SPREADSHEET_ID',sheetId);
- return getCompanyLedgerStorageSettings();
- }catch(error){if(created){try{created.setTrashed(true);}catch(_){}}throw new Error('会社台帳の保存先を設定できませんでした。フォルダの編集権限を確認してください。');}finally{lock.releaseLock();}
+ const lock=LockService.getScriptLock();lock.waitLock(20000);
+ try{const p=PropertiesService.getScriptProperties();syncCompanyLedgerSheet_(companyLedgerRecords_(),id);p.setProperty('COMPANY_LEDGER_FOLDER_ID',id);return getCompanyLedgerStorageSettings();}
+ catch(error){throw new Error('会社台帳の保存先を設定できませんでした。フォルダの編集権限を確認して再実行してください。');}finally{lock.releaseLock();}
+}
+function createCompanyLedgerSpreadsheets(){
+ requireGrantAdmin_();const lock=LockService.getScriptLock();lock.waitLock(20000);try{if(!PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_FOLDER_ID'))throw Error('会社台帳の保存先を先に設定してください。');syncCompanyLedgerSheet_(companyLedgerRecords_());return listCompanyNumbers();}finally{lock.releaseLock();}
 }
 
 function companyLedgerDetails_(record){return record?.detailFileId?JSON.parse(DriveApp.getFileById(record.detailFileId).getBlob().getDataAsString('UTF-8')):{values:{},fields:[],employees:[]};}
@@ -421,7 +434,7 @@ function upsertSubmittedCompany_(invite,submission){
  let old=invite.companyId?records.find(r=>r.id===invite.companyId):null;
  if(invite.companyId&&!old)throw Error('会社台帳の紐付け先が見つかりません。');
  if(!old){const matches=records.filter(r=>r.name.normalize('NFKC')===name.normalize('NFKC')&&r.profile?.email&&r.profile.email.toLowerCase()===email.toLowerCase());if(matches.length===1)old=matches[0];}
- const details=companyLedgerDetails_(old);if(details.lastReceipt===submission.receipt){invite.companyId=old.id;syncCompanyLedgerSheet_(records);return old.id;}
+ const details=companyLedgerDetails_(old);if(details.lastReceipt===submission.receipt){invite.companyId=old.id;syncCompanyLedgerSheet_([old]);return old.id;}
  const id=old?.id||Utilities.getUuid(),profile={...(old?.profile||{})},values={...(details.values||{})},fields=new Map((details.fields||[]).map(f=>[ledgerLabelKey_(f.label,f.type),f]));
  for(const [key,value] of Object.entries(submission.values||{})){if((values[key]===undefined||values[key]===null||values[key]==='')&&value!==''&&value!==null&&value!==undefined)values[key]=String(value);}
  const common={industry:120,address:250,representative:120,representativeKana:120,person:80,phone:40,email:180};
@@ -432,7 +445,7 @@ function upsertSubmittedCompany_(invite,submission){
  let detailFileId=old?.detailFileId;if(detailFileId)DriveApp.getFileById(detailFileId).setContent(JSON.stringify(data));else{const destination=PropertiesService.getScriptProperties().getProperty('COMPANY_LEDGER_FOLDER_ID');const folder=destination?DriveApp.getFolderById(destination):requirementStore_(true);detailFileId=folder.createFile('company-data-'+id+'.json',JSON.stringify(data),MimeType.PLAIN_TEXT).getId();}
  const record={...(old||{}),id,name:old?.name||name,profile,entries:old?.entries||[],detailFileId,lastSubmissionReceipt:submission.receipt,updatedAt:submission.submittedAt};
  const json=JSON.stringify(record);if(Utilities.newBlob(json).getBytes().length>8500)throw Error('会社台帳の基本情報が長すぎます。');
- PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+id,json);invite.companyId=id;syncCompanyLedgerSheet_([...records.filter(r=>r.id!==id),record]);return id;
+ PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+id,json);invite.companyId=id;syncCompanyLedgerSheet_([record]);return id;
 }
 function accumulateSubmittedCompany_(invite,submission){try{upsertSubmittedCompany_(invite,submission);invite.ledgerSyncPending=false;delete invite.ledgerSyncError;}catch(_){invite.ledgerSyncPending=true;invite.ledgerSyncError='会社台帳への反映を再実行してください。';}}
 function retrySubmittedCompanyLedger(historyId){
@@ -468,6 +481,6 @@ function saveCompanyFieldAliases(input){
  const key=ledgerLabelKey_(name,s.type),owner=owners.get(key);if(owner&&owner!==s.key)throw Error('同じ別名が複数の項目に対応しています：'+name);owners.set(key,s.key);
  }
  const updated={...record,fieldAliases:{...(record.fieldAliases||{}),...aliases}},json=JSON.stringify(updated);if(Utilities.newBlob(json).getBytes().length>8500)throw Error('別名の登録量が多すぎます。');
- syncCompanyLedgerSheet_(records.map(r=>r.id===record.id?updated:r));PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+record.id,json);return true;
+ syncCompanyLedgerSheet_([updated]);PropertiesService.getScriptProperties().setProperty(COMPANY_NUMBER_PREFIX+record.id,json);return true;
  }finally{lock.releaseLock();}
 }
