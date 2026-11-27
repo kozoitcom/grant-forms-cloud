@@ -18,6 +18,9 @@ concurrency:
 
 jobs:
   deploy:
+    # Only explicitly completed changes deploy. Intermediate source/test commits skip this job.
+    # Publish all related files together in one commit with [deploy] in its message.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
