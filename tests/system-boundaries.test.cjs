@@ -206,3 +206,21 @@ test('multiple company field aliases persist, prefill alternate labels and rejec
  assert.throws(()=>context.saveCompanyFieldAliases({companyId:id,fields:[{key:'common:address',aliases:'企業名'}]}),/複数/);
  context.saveCompanyFieldAliases({companyId:id,fields:[{key:'common:company',aliases:''}]});assert.equal(context.getCompanyFieldAliases(id).find(f=>f.key==='common:company').aliases.length,0);assert.equal(context.companyLedgerRecords_()[0].name,'会社A');
 });
+
+test('transfer workspace saves mixed templates with frozen company base, validates company and retries upload once',()=>{
+ const {context,props}=harness();let next=0;const iter=a=>{let i=0;return {hasNext:()=>i<a.length,next:()=>a[i++]}};const folders=new Map();
+ function folder(id){const fs=[],children=[];const f={id,getId:()=>id,createFolder(name){const child=folder(name);children.push(child);return child;},getFoldersByName:n=>iter(children.filter(x=>x.id===n)),getFolders:()=>iter(children),getFilesByName:n=>iter(fs.filter(x=>x.name===n)),createFile(name,text){if(typeof name==='object'){text=name.bytes;name=name.name;}const file={name,text,id:'f'+(++next),getId(){return this.id},getUrl(){return 'https://drive.google.com/file/d/'+this.id+'/view'},getBlob(){return {getDataAsString:()=>this.text}},setContent(text){this.text=text;}};fs.push(file);return file;}};folders.set(id,f);return f;}
+ context.DriveApp={createFolder:()=>folder('root'),getFolderById:id=>folders.get(id)};context.Utilities.base64Decode=s=>[...Buffer.from(s,'base64')];context.Utilities.newBlob=(bytes,mime,name)=>({bytes,name,getName(){return this.name},getBytes(){return this.bytes},setName(v){this.name=v;return this}});context.requirementUploadExtension_=(_field,_blob,bytes)=>{if(bytes[0]!==80)throw Error('format');};
+ const record={id:'company',name:'会社A',profile:{address:'住所A'}},details={values:{custom:'保存値'},fields:[]};context.companyLedgerRecords_=()=>[record];context.companyLedgerDetails_=()=>details;context.collectionExport_=()=>({company:'別会社',receipt:'wrong'});
+ const input={companyId:'company',grantName:'助成金',year:'令和8年度',output:'original_pdf',notes:'今回の計画',files:[{name:'申請書.docx',size:2,role:'blank'},{name:'別紙.xlsx',size:2,role:'blank'}]};
+ assert.throws(()=>context.beginTransferWorkspace({...input,receipt:'wrong'}),/一致/);assert.throws(()=>context.beginTransferWorkspace({...input,files:[{name:'申請書.pdf',size:2,role:'blank'}]}),/Word/);
+ const {id}=context.beginTransferWorkspace(input);assert.throws(()=>context.completeTransferWorkspace(id),/すべて/);assert.throws(()=>context.uploadTransferWorkspaceFile({id,index:0,base64:'AA=='}),/サイズ/);
+ context.uploadTransferWorkspaceFile({id,index:0,base64:'UEs='});const prior=next;context.uploadTransferWorkspaceFile({id,index:0,base64:'UEs='});assert.equal(next,prior);context.uploadTransferWorkspaceFile({id,index:1,base64:'UEs='});
+ const result=context.completeTransferWorkspace(id);assert.equal(result.base.values.address,'住所A');assert.equal(result.files.length,2);assert.equal(result.generationAvailable,false);record.profile.address='変更後';details.values.custom='変更値';const saved=context.getTransferWorkspace(id);assert.equal(saved.base.values.address,'住所A');assert.equal(saved.base.values.custom,'保存値');assert.equal(context.listTransferWorkspaces().length,1);assert.equal(saved.output,'original_pdf');
+});
+test('transfer workspace endpoints require administrator before storage access',()=>{
+ const {context,setUser}=harness();setUser('outsider@example.test');for(const [name,arg]of [['beginTransferWorkspace',{}],['uploadTransferWorkspaceFile',{}],['completeTransferWorkspace','bad'],['listTransferWorkspaces'],['getTransferWorkspace','bad']])assert.throws(()=>context[name](arg));
+});
+test('transfer tab provides mixed uploads and company base without advertising completed document generation',()=>{
+ const html=read('DocumentTransferView.html');assert.match(html,/ws-company/);assert.match(html,/multiple accept="\.docx,\.doc,\.xlsx,\.xls,\.pdf"/);assert.match(html,/ondrop/);assert.match(html,/ws-notes/);assert.match(html,/ws-output/);assert.match(html,/自動記入とPDF出力は未実装/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(m[1]));
+});
