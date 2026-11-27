@@ -150,14 +150,12 @@ test('company ledger spreadsheet rows preserve identifiers and escape spreadshee
  const {context}=harness();const rows=context.companyLedgerRows_([{id:'id1',name:'=formula',profile:{phone:'00123',industry:'通信'},entries:[['管理番号','0001']]}]);
  assert.equal(rows[0][1],'会社名');assert.equal(rows[1][1],"'=formula");assert.equal(rows[1][7],'00123');assert.equal(rows[1][8],'0001');
 });
-test('company ledger folder configuration exports existing records and returns folder and spreadsheet links',()=>{
- const {context,props,setUser}=harness();let moved=0,sync=0;
+test('company ledger folder setting exports records separately and keeps old shared spreadsheet',()=>{
+ const {context,props,setUser}=harness();let sync=0;props.COMPANY_LEDGER_SPREADSHEET_ID='old-shared';
  const folder={getUrl:()=> 'https://drive.google.com/drive/folders/test-folder-123',getName:()=> '台帳保存先',isTrashed:()=>false,createFile:()=>({setTrashed(){}})};
- context.DriveApp.getFolderById=()=>folder;context.DriveApp.getFileById=()=>({moveTo(f){assert.equal(f,folder);moved++;},setTrashed(){}});
- context.SpreadsheetApp.create=()=>({getId:()=> 'ledger-sheet'});context.SpreadsheetApp.openById=()=>({getUrl:()=> 'https://docs.google.com/spreadsheets/d/ledger-sheet/edit'});
- context.listCompanyNumbers=()=>[{id:'company1',name:'会社'}];context.syncCompanyLedgerSheet_=(records,id)=>{assert.equal(records[0].name,'会社');assert.equal(id,'ledger-sheet');sync++;};
- const result=context.saveCompanyLedgerStorageSettings('https://drive.google.com/drive/folders/test-folder-123');assert.equal(props.COMPANY_LEDGER_FOLDER_ID,'test-folder-123');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'ledger-sheet');assert.equal(sync,1);assert.equal(moved,1);assert(result.spreadsheetUrl.includes('ledger-sheet'));
- setUser('other@example.test');assert.throws(()=>context.getCompanyLedgerStorageSettings());assert.throws(()=>context.saveCompanyLedgerStorageSettings('bad'));
+ context.DriveApp.getFolderById=()=>folder;context.companyLedgerRecords_=()=>[{id:'company1',name:'会社'}];context.syncCompanyLedgerSheet_=(records,id)=>{assert.equal(records[0].name,'会社');assert.equal(id,'test-folder-123');sync++;};
+ const result=context.saveCompanyLedgerStorageSettings('https://drive.google.com/drive/folders/test-folder-123');assert.equal(props.COMPANY_LEDGER_FOLDER_ID,'test-folder-123');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'old-shared');assert.equal(sync,1);assert.equal(result.spreadsheetUrl,'');assert.equal(result.perCompany,true);
+ setUser('other@example.test');assert.throws(()=>context.getCompanyLedgerStorageSettings());assert.throws(()=>context.saveCompanyLedgerStorageSettings('bad'));assert.throws(()=>context.createCompanyLedgerSpreadsheets());
 });
 
 test('submitted company data accumulates across grants and prefills matching fields without erasing blanks',()=>{
@@ -223,4 +221,14 @@ test('transfer workspace endpoints require administrator before storage access',
 });
 test('transfer tab provides mixed uploads and company base without advertising completed document generation',()=>{
  const html=read('DocumentTransferView.html');assert.match(html,/ws-company/);assert.match(html,/multiple accept="\.docx,\.doc,\.xlsx,\.xls,\.pdf"/);assert.match(html,/ondrop/);assert.match(html,/ws-notes/);assert.match(html,/ws-output/);assert.match(html,/自動記入とPDF出力は未実装/);for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(m[1]));
+});
+
+test('each company receives one stable spreadsheet and never writes another company or legacy shared file',()=>{
+ const {context,props}=harness();props.COMPANY_LEDGER_FOLDER_ID='folder';props.COMPANY_LEDGER_SPREADSHEET_ID='legacy';const books=new Map(),writes=[];let creates=0,moves=0,fail=false;
+ const folder={isTrashed:()=>false};context.DriveApp.getFolderById=()=>folder;context.DriveApp.getFileById=id=>({isTrashed:()=>false,moveTo(f){assert.equal(f,folder);moves++;}});
+ context.SpreadsheetApp={create(name){const id='sheet-'+(++creates),book={getId:()=>id,name};books.set(id,book);return book;},openById:id=>{assert.notEqual(id,'legacy');return books.get(id)},flush(){}};
+ context.writeCompanyLedgerRows_=(book,record)=>{if(fail)throw Error('temporary');writes.push([book.getId(),record.id]);};
+ const companies=[{id:'a',name:'会社A'},{id:'b',name:'会社B'}];context.syncCompanyLedgerSheet_(companies);assert.equal(creates,2);assert.notEqual(props.COMPANY_LEDGER_SHEET_a,props.COMPANY_LEDGER_SHEET_b);
+ context.syncCompanyLedgerSheet_([{...companies[0],name:'変更名'}]);assert.equal(creates,2);assert.equal(writes[2][0],props.COMPANY_LEDGER_SHEET_a);assert.equal(writes[2][1],'a');assert.equal(props.COMPANY_LEDGER_SPREADSHEET_ID,'legacy');
+ fail=true;assert.throws(()=>context.syncCompanyLedgerSheet_([{id:'c',name:'会社C'}]),/temporary/);const stable=props.COMPANY_LEDGER_SHEET_c;fail=false;context.syncCompanyLedgerSheet_([{id:'c',name:'会社C'}]);assert.equal(creates,3);assert.equal(props.COMPANY_LEDGER_SHEET_c,stable);
 });
