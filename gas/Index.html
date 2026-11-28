@@ -1,0 +1,82 @@
+<!doctype html><html lang="ja"><head><base target="_top">
+<style>
+body{font:15px/1.65 system-ui,-apple-system,sans-serif;max-width:900px;margin:24px auto;padding:0 16px;color:#172536}
+h1{font-size:24px}h2{font-size:19px}label{display:block;margin:14px 0 5px;font-weight:600}
+input,textarea,select,button{font:inherit;box-sizing:border-box;padding:10px;border-radius:6px;border:1px solid #b9c3cf}
+input:not([type=file]),textarea,select{width:100%}textarea{min-height:100px}
+button{cursor:pointer;background:#1657a5;color:white;border:0;margin:8px 8px 8px 0}
+button.secondary{background:#f1f4f8;color:#223}.card{border:1px solid #d8e0e8;border-radius:10px;padding:18px;margin:18px 0}
+small,.muted{color:#667}.error{color:#b42318;white-space:pre-wrap}.ok{color:#087443}
+nav a{margin-right:14px}pre{white-space:pre-wrap;word-break:break-all}
+</style></head><body>
+<h1>助成金フォーム</h1><div id="status" role="status"></div><div id="app"></div>
+<script>
+const START_FORM=<?= JSON.stringify(formId) ?>;
+let adminToken='', currentForm=null;
+const $=id=>document.getElementById(id);
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function status(s,err=false){$('status').innerHTML='<p class="'+(err?'error':'ok')+'">'+esc(s)+'</p>';}
+function call(fn,...args){return new Promise((resolve,reject)=>{
+ google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(Error(e.message||String(e))))[fn](...args);
+});}
+async function run(fn,...args){status('処理中…');try{const r=await call(fn,...args);status('');return r}catch(e){status(e.message,true);throw e;}}
+function loginView(){
+ $('app').innerHTML='<div class="card"><h2>管理者ログイン</h2><label>管理者パスワード</label><input type="password" id="pass"><button id="loginBtn">ログイン</button></div>';
+ $('loginBtn').onclick=async()=>{try{adminToken=await run('adminLogin',$('pass').value);adminView();}catch(e){}};
+}
+async function adminView(){
+ try{
+ const data=await run('adminList',adminToken);
+ let h='<nav><a href="#" id="newForm">新しいフォーム</a></nav><div class="card"><h2>フォーム一覧</h2>';
+ for(const f of data.forms)h+='<p>'+esc(f.title)+' ('+(f.published?'公開':'非公開')+') <button class="secondary" data-edit="'+esc(f.id)+'">編集</button> <a target="_blank" href="?form='+encodeURIComponent(f.id)+'">回答フォーム</a></p>';
+ h+='</div><div class="card"><h2>企業からの回答</h2>';
+ for(const r of data.submissions)h+='<p>'+esc(r.company||r.id)+' / '+esc(r.createdAt)+' <button class="secondary" data-sub="'+esc(r.id)+'">詳細</button></p>';
+ h+='</div><p class="muted">募集要項PDFのAI解析は次の開発段階で追加予定です。現段階はフォーム項目をJSONで編集します。</p>';
+ $('app').innerHTML=h;
+ $('newForm').onclick=e=>{e.preventDefault();editView(null);};
+ document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{try{editView(await run('adminGetForm',adminToken,b.dataset.edit));}catch(e){}});
+ document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=async()=>{try{const r=await run('adminSubmission',adminToken,b.dataset.sub);$('app').innerHTML='<button id="back">戻る</button><div class="card"><h2>回答詳細</h2><pre>'+esc(JSON.stringify(r,null,2))+'</pre></div>';$('back').onclick=adminView;}catch(e){}});
+ }catch(e){}
+}
+function editView(f){
+ const sample=[{id:'company_name',label:'会社名',type:'text',required:true},{id:'contact_email',label:'メールアドレス',type:'email',required:true},{id:'required_document',label:'必要書類',type:'file',required:true}];
+ $('app').innerHTML='<button class="secondary" id="back">戻る</button><div class="card"><h2>フォーム編集</h2><label>フォーム名</label><input id="title" value="'+esc(f?.title||'新規助成金フォーム')+'"><label>項目JSON</label><textarea id="fields" rows="18"></textarea><label><input type="checkbox" id="published" '+(f?.published?'checked':'')+'> 公開する</label><p><button id="save">保存</button></p></div>';
+ $('fields').value=JSON.stringify(f?.fields||sample,null,2);
+ $('back').onclick=adminView;
+ $('save').onclick=async()=>{try{await run('adminSaveForm',adminToken,f?.id||'', $('title').value,JSON.parse($('fields').value),$('published').checked);adminView();}catch(e){}};
+}
+function readFile(file){return new Promise((resolve,reject)=>{
+ const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('ファイルを読み込めません'));reader.readAsDataURL(file);
+});}
+async function publicView(id){
+ try{
+ currentForm=await run('publicGetForm',id);
+ let h='<div class="card"><h2>'+esc(currentForm.title)+'</h2><form id="answerForm">';
+ for(const f of currentForm.fields){
+ h+='<label for="f_'+esc(f.id)+'">'+esc(f.label)+(f.required?' *':'')+'</label>';
+ if(f.help)h+='<small>'+esc(f.help)+'</small>';
+ const req=f.required?' required':'';
+ if(f.type==='textarea')h+='<textarea id="f_'+esc(f.id)+'"'+req+'></textarea>';
+ else if(f.type==='select')h+='<select id="f_'+esc(f.id)+'"'+req+'><option value="">選択してください</option>'+f.options.map(x=>'<option>'+esc(x)+'</option>').join('')+'</select>';
+ else h+='<input id="f_'+esc(f.id)+'" type="'+esc(f.type)+'"'+req+(f.type==='file'?' accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"':'')+'>';
+ }
+ h+='<p><button id="send">回答・書類を送信</button></p><small>試作版です。実際の企業情報や機密書類はまだ送信しないでください。</small></form></div>';
+ $('app').innerHTML=h;
+ $('answerForm').onsubmit=async e=>{
+ e.preventDefault();const answers={},files=[];
+ try{
+ for(const f of currentForm.fields){
+ const input=$('f_'+f.id);
+ if(f.type==='file'){
+ const file=input.files[0];if(file){if(file.size>5*1024*1024)throw Error('ファイルは5MB以内です');files.push({fieldId:f.id,name:file.name,mimeType:file.type,base64:await readFile(file)});}
+ }else answers[f.id]=input.value;
+ }
+ $('send').disabled=true;
+ const sid=await run('publicSubmit',currentForm.id,answers,files);
+ $('app').innerHTML='<div class="card"><h2>送信完了</h2><p>受付番号：'+esc(sid)+'</p></div>';
+ }catch(err){status(err.message,true);$('send').disabled=false;}
+ };
+ }catch(e){}
+}
+if(START_FORM)publicView(START_FORM);else loginView();
+</script></body></html>

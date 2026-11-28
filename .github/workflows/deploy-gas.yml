@@ -1,0 +1,33 @@
+name: Deploy Google Apps Script
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'gas/**'
+      - '.github/workflows/deploy-gas.yml'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install clasp
+        run: npm install -g @google/clasp
+      - name: Configure clasp authentication
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+        run: |
+          if [ -z "$CLASP_CREDENTIALS" ]; then
+            echo "Missing CLASP_CREDENTIALS GitHub Actions secret" >&2
+            exit 1
+          fi
+          printf '%s' "$CLASP_CREDENTIALS" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+      - name: Push Apps Script source
+        working-directory: gas
+        run: clasp push --force
